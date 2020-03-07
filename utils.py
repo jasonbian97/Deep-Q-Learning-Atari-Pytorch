@@ -4,6 +4,7 @@ import torch
 import matplotlib
 import matplotlib.pyplot as plt
 from collections import namedtuple
+import numpy as np
 is_ipython = 'inline' in matplotlib.get_backend()
 if is_ipython:
     from IPython import display
@@ -34,7 +35,7 @@ class ReplayMemory():
     def can_provide_sample(self, batch_size):
         return len(self.memory) >= batch_size
 
-class EpsilonGreedyStrategy():
+class EpsilonGreedyStrategyExp():
     def __init__(self, start, end, decay):
         self.start = start
         self.end = end
@@ -43,6 +44,17 @@ class EpsilonGreedyStrategy():
     def get_exploration_rate(self, current_step):
         return self.end + (self.start - self.end) * \
                math.exp(-1. * current_step * self.decay)
+
+class EpsilonGreedyStrategyLinear():
+    def __init__(self, start, end, kneepoint=2000):
+        self.start = start
+        self.end = end
+        self.kneepoint = kneepoint
+
+    def get_exploration_rate(self, current_step):
+        return self.end + \
+               np.maximum(0, (1-self.end)-(1-self.end)/self.kneepoint * current_step)
+
 
 def get_moving_average(period, values):
     values = torch.tensor(values, dtype=torch.float)
@@ -112,3 +124,37 @@ class QValues():
             values[non_final_state_locations] = target_net(non_final_states).max(dim=1)[0]
             return values
 
+
+def visualize_state(state):
+    # settings
+    nrows, ncols = 1, 4  # array of sub-plots
+    figsize = [8, 4]  # figure size, inches
+
+    # prep (x,y) for extra plotting on selected sub-plots
+    # xs = np.linspace(0, 2 * np.pi, 60)  # from 0 to 2pi
+    # ys = np.abs(np.sin(xs))  # absolute of sine
+
+    # create figure (fig), and array of axes (ax)
+    fig, ax = plt.subplots(nrows=nrows, ncols=ncols, figsize=figsize)
+
+    # plot simple raster image on each sub-plot
+    for i, axi in enumerate(ax.flat):
+        # i runs from 0 to (nrows*ncols-1)
+        # axi is equivalent with ax[rowid][colid]
+        img = state.squeeze(0)[i,None]
+        cpu_img = img.squeeze(0).cpu()
+        axi.imshow(cpu_img*255,cmap='gray', vmin=0, vmax=255)
+
+        # get indices of row/column
+        rowid = i // ncols
+        colid = i % ncols
+        # write row/col indices as axes' title for identification
+        axi.set_title("Row:" + str(rowid) + ", Col:" + str(colid))
+
+    # one can access the axes by ax[row_id][col_id]
+    # do additional plotting on ax[row_id][col_id] of your choice
+    # ax[0][2].plot(xs, 3 * ys, color='red', linewidth=3)
+    # ax[4][3].plot(ys ** 2, xs, color='green', linewidth=3)
+
+    plt.tight_layout(True)
+    plt.show()

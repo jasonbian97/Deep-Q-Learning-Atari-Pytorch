@@ -44,14 +44,16 @@ class BreakoutEnvManager():
         return self.current_screen is None
 
     def can_provide_state(self):
-        if len(self.running_queue) == self.running_K:
-            return True
-        else:
-            return False
+        """
+        BZX: if the number of black screens is less or equal to 1, then return True.
+        else return False
+        :return: bool
+        """
+        #TODO
 
     def init_running_queue(self):
         """
-        initalize running queue with K black images
+        initialize running queue with K black images
         :return:
         """
         self.current_screen = self.get_processed_screen()
@@ -66,14 +68,14 @@ class BreakoutEnvManager():
             self.current_screen = self.get_processed_screen()
             black_screen = torch.zeros_like(self.current_screen)
             # BZX: update running_queue
-            self.running_queue.pop(-1)
-            self.running_queue.insert(0,black_screen)
+            self.running_queue.pop(0)
+            self.running_queue.append(black_screen)
         else: #BZX: normal case
             s2 = self.get_processed_screen()
             self.current_screen = s2
             # BZx: update running_queue with s2
-            self.running_queue.pop(-1)
-            self.running_queue.insert(0, s2)
+            self.running_queue.pop(0)
+            self.running_queue.append(s2)
 
         return torch.stack(self.running_queue,dim=1).squeeze(2) #BZX: check if shape is (1KHW)
 
@@ -95,8 +97,10 @@ class BreakoutEnvManager():
         screen_height = screen.shape[1]
 
         # Strip off top and bottom
-        top = int(screen_height/2 - 39)
-        bottom = int(screen_height/2 + 45)
+        # top = int(screen_height/2 - 39)
+        # bottom = int(screen_height/2 + 45)
+        top = 20
+        bottom = 200
         screen = screen[:, top:bottom, :] #BZX:(CHW)
         return screen
 
@@ -104,7 +108,7 @@ class BreakoutEnvManager():
         # Convert to float, rescale, convert to tensor
         screen = np.ascontiguousarray(screen, dtype=np.float32) / 255
         screen = torch.from_numpy(screen)
-
+        screen = self.crop_screen(screen)  # [TRY: crop before Resize]
         # Use torchvision package to compose image transforms
         resize = T.Compose([
             T.ToPILImage()
@@ -114,7 +118,7 @@ class BreakoutEnvManager():
         ])
         # add a batch dimension (BCHW)
         screen = resize(screen)
-        # BZX: screen = self.crop_screen(screen) [TRY: crop before Resize]
+
         return screen.unsqueeze(0).to(self.device)   # BZX: Pay attention to the shape here. should be [1,1,110,84]
 
 

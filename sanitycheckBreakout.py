@@ -31,6 +31,7 @@ for episode in range(num_episodes):
         _, reward, done, _ = env.step(action)
         tol_reward += reward
         env.render()
+        print(reward)
 
         if done:
             rewards_hist.append(tol_reward)

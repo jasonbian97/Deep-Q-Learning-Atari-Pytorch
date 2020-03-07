@@ -50,3 +50,10 @@ plt.imshow(screen.squeeze(0).permute(1, 2, 0).cpu(), interpolation='none')
 plt.title('Ending state example')
 plt.show()
 em.close()
+
+### show eps curve : EpsilonGreedyStrategyLinear
+x = np.linspace(0,10000,10001)
+strategy = EpsilonGreedyStrategyLinear(1,0.1,2000)
+y = strategy.get_exploration_rate(x)
+plt.plot(x,y)
+plt.show()
