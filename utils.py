@@ -35,6 +35,33 @@ class ReplayMemory():
     def can_provide_sample(self, batch_size):
         return len(self.memory) >= batch_size
 
+class ReplayMemory_economy():
+    def __init__(self, capacity):
+        self.capacity = capacity
+        self.memory = []
+        self.push_count = 0
+    def push(self, experience):
+        if len(self.memory) < self.capacity:
+            self.memory.append(experience)
+        else:
+            self.memory[self.push_count % self.capacity] = experience
+        self.push_count += 1
+
+    def sample(self, batch_size):
+        experience_index = np.random.randint(0, len(self.memory)-3, size=32)
+        # memory_arr = np.array(self.memory)
+        experiences = []
+        for index in experience_index:
+            state = torch.stack(([self.memory[index+j].state for j in range(4)])).unsqueeze(0)
+            next_state = torch.stack(([self.memory[index+j].next_state for j in range(4)])).unsqueeze(0)
+            experiences.append(Experience(state, self.memory[index].action, next_state, self.memory[index].reward))
+        # return random.sample(self.memory, batch_size)
+        return experiences
+
+    def can_provide_sample(self, batch_size):
+        return len(self.memory) >= batch_size + 3
+
+
 class EpsilonGreedyStrategyExp():
     def __init__(self, start, end, decay):
         self.start = start
