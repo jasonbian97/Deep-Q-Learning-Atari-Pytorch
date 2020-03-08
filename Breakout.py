@@ -133,8 +133,8 @@ for episode in range(num_episodes):
         path = CHECK_POINT_PATH+GAME_NAME
         if not os.path.exists(path):
             os.makedirs(path)
-        torch.save(policy_net.state_dict(), path + "Episodes:{}-Reward:{}-Time:".format(episode,running_reward) + \
-                   datetime.datetime.now().strftime(DATE_FORMAT) +".pth")
+        # torch.save(policy_net.state_dict(), path + "Episodes:{}-Reward:{}-Time:".format(episode,running_reward) + \
+                   # datetime.datetime.now().strftime(DATE_FORMAT) +".pth")
         print("exploration_rate=", strategy.get_exploration_rate(episode))
 
 em.close()

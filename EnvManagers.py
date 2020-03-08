@@ -23,6 +23,7 @@ class BreakoutEnvManager():
         self.env.reset()
         self.current_screen = None
         self.running_queue = [] #BZX: clear the state
+        self.current_lives = 5
 
     def close(self):
         self.env.close()
@@ -37,8 +38,16 @@ class BreakoutEnvManager():
         print(self.env.get_action_meanings())
 
     def take_action(self, action):
-        _, reward, self.done, _ = self.env.step(action.item())
-        return torch.tensor([np.sign(reward)], device=self.device) #BZX:[TRY] better reward measurement
+        _, reward, self.done, lives = self.env.step(action.item())
+        if lives['ale.lives'] == self.current_lives - 1:
+            self.is_lives_change = True
+        else:
+            self.is_lives_change = False
+        self.current_lives = lives['ale.lives']
+        # print(lives['ale.lives'])
+        return torch.tensor([np.sign(reward)], device=self.device)
+        # torch.tensor(self.done, device=self.device), torch.tensro(lives, device=self.device)
+        #BZX:[TRY] better reward measurement
 
     def just_starting(self):
         return self.current_screen is None
@@ -64,7 +73,7 @@ class BreakoutEnvManager():
     def get_state(self):
         if self.just_starting():
             self.init_running_queue()
-        elif self.done:
+        elif self.done or self.is_lives_change:
             self.current_screen = self.get_processed_screen()
             black_screen = torch.zeros_like(self.current_screen)
             # BZX: update running_queue
