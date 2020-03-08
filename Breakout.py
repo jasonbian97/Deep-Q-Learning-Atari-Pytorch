@@ -50,9 +50,9 @@ eps_start = 1
 eps_end = 0.05
 # eps_decay = 0.001
 eps_kneepoint = 500000 #BZX: the number of action taken by agent
-target_update = 4
+target_update = 50
 memory_size = 60000 #BZX: apporximately would take 6.7GB on your GPU
-lr = 0.001
+lr = 0.00025
 num_episodes = 10000
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -77,7 +77,7 @@ target_net = DQN_CNN_original(num_classes=em.num_actions_available(),init_weight
 
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval() # BZX: this network will only be used for inference.
-optimizer = optim.Adam(params=policy_net.parameters(), lr=lr)
+optimizer = optim.RMSprop(params=policy_net.parameters(), lr=lr, eps = 1e-6)
 criterion = torch.nn.SmoothL1Loss()
 # BZX: Sanity Check: print(policy_net)
 # print("num_actions_available: ",em.num_actions_available())
@@ -97,7 +97,7 @@ for episode in range(num_episodes):
         # time.sleep(0.3)
         # em.env.render() # BZX: will this slow down the speed?
         action = agent.select_action(state, policy_net)
-        print("action = ", action.cpu().item())
+        #print("action = ", action.cpu().item())
         reward = em.take_action(action)
         print("reward = ", reward.cpu().item())
         tol_reward += reward
