@@ -59,7 +59,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 em = BreakoutEnvManager(device)
 strategy = EpsilonGreedyStrategyLinear(eps_start, eps_end, eps_kneepoint)
 agent = Agent(strategy, em.num_actions_available(), device)
-memory = ReplayMemory(memory_size)
+# memory = ReplayMemory(memory_size)
+memory = ReplayMemory_economy(memory_size)
 
 """ BZX:
 cfgs: the configuration of CNN architecture used in feature extraction.
@@ -103,13 +104,13 @@ for episode in range(num_episodes):
         tol_reward += reward
         next_state = em.get_state()
         # visualize_state(state)
-        memory.push(Experience(state, action, next_state, reward))
+        # memory.push(Experience(state, action, next_state, reward))
+        memory.push(Experience(state[0,-1,:,:], action, next_state[0,-1,:,:], reward))
         state = next_state
 
         if memory.can_provide_sample(batch_size):
             experiences = memory.sample(batch_size)
             states, actions, rewards, next_states = extract_tensors(experiences)
-
             current_q_values = QValues.get_current(policy_net, states, actions)
             next_q_values = QValues.get_next(target_net, next_states)
             target_q_values = (next_q_values * gamma) + rewards
@@ -133,8 +134,8 @@ for episode in range(num_episodes):
         path = CHECK_POINT_PATH+GAME_NAME
         if not os.path.exists(path):
             os.makedirs(path)
-        torch.save(policy_net.state_dict(), path + "Episodes:{}-Reward:{}-Time:".format(episode,running_reward) + \
-                   datetime.datetime.now().strftime(DATE_FORMAT) +".pth")
+        # torch.save(policy_net.state_dict(), path + "Episodes:{}-Reward:{}-Time:".format(episode,running_reward) + \
+                   # datetime.datetime.now().strftime(DATE_FORMAT) +".pth")
         print("exploration_rate=", strategy.get_exploration_rate(episode))
 
 em.close()
