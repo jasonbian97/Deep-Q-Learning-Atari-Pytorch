@@ -18,6 +18,7 @@ import torchvision.transforms as T
 from DQNs import *
 from utils import *
 from EnvManagers import BreakoutEnvManager
+import pickle
 
 class Agent():
     def __init__(self, strategy, num_actions, device):
@@ -29,7 +30,7 @@ class Agent():
     def select_action(self, state, policy_net):
         rate = self.strategy.get_exploration_rate(self.current_step)
         self.current_step += 1
-        print("eps = ",rate)
+        # print("eps = ",rate)
         if rate > random.random():
             action = random.randrange(self.num_actions)
             return torch.tensor([action]).to(self.device)  # explore
@@ -38,22 +39,25 @@ class Agent():
                 return policy_net(state).argmax(dim=1).to(self.device)  # exploit
 # Configuration:
 CHECK_POINT_PATH = "./checkpoints/"
+FIGURES_PATH = "./figures/"
 GAME_NAME = "Breakout/"
 DATE_FORMAT = "%m-%d-%Y-%H-%M-%S"
 EPISODES_PER_CHECKPOINT = 1000
-
-
+# generate heldout set
+HELD_OUT_SET = []
+heldoutset_counter = 0
+minibatch_updates_counter = 0
 # Hyperparameters
 batch_size = 32
 gamma = 0.99
 eps_start = 1
-eps_end = 0.05
+eps_end = 0.1
 # eps_decay = 0.001
-eps_kneepoint = 500000 #BZX: the number of action taken by agent
-target_update = 50
-memory_size = 60000 #BZX: apporximately would take 6.7GB on your GPU
+eps_kneepoint = 1000000 #BZX: the number of action taken by agent
+target_update = 10000 # per minibatch_updates_counter
+memory_size = 400000
 lr = 0.00025
-num_episodes = 10000
+num_episodes = 100000
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 em = BreakoutEnvManager(device)
@@ -88,55 +92,82 @@ rewards_hist = []
 running_reward = 0
 plt.figure()
 
-for episode in range(num_episodes):
-    em.reset()
-    state = em.get_state() # initialize sate
-    tol_reward = 0
-    # visualize_state(state)
-    # time.sleep(0.5)
-    while(1):
-        # time.sleep(0.3)
-        # em.env.render() # BZX: will this slow down the speed?
-        action = agent.select_action(state, policy_net)
-        #print("action = ", action.cpu().item())
-        reward = em.take_action(action)
-        print("reward = ", reward.cpu().item())
-        tol_reward += reward
-        next_state = em.get_state()
+try:
+    for episode in range(num_episodes):
+        em.reset()
+        state = em.get_state() # initialize sate
+        tol_reward = 0
         # visualize_state(state)
-        # memory.push(Experience(state, action, next_state, reward))
-        memory.push(Experience(state[0,-1,:,:], action, next_state[0,-1,:,:], reward))
-        state = next_state
+        # time.sleep(0.5)
+        while(1):
+            # time.sleep(0.3)
+            # em.env.render() # BZX: will this slow down the speed?
+            action = agent.select_action(state, policy_net)
+            #print("action = ", action.cpu().item())
+            reward = em.take_action(action)
+            # print("reward = ", reward.cpu().item())
+            tol_reward += reward
+            next_state = em.get_state()
+            if random.random()<0.005:
+                HELD_OUT_SET.append(next_state.cpu().numpy())
+                if len(HELD_OUT_SET) == 2000:
+                    heldoutset_file = open('heldoutset-{}'.format(heldoutset_counter), 'wb')
+                    pickle.dump(HELD_OUT_SET, heldoutset_file)
+                    heldoutset_file.close()
+                    HELD_OUT_SET=[]
+                    heldoutset_counter += 1
+            # visualize_state(state)
+            # memory.push(Experience(state, action, next_state, reward))
+            # d_state = state[0,-1,:,:].detach().clone()
+            # d_next_state = next_state[0,-1,:,:].detach().clone()
+            memory.push(Experience(state[0,-1,:,:].clone(), action, next_state[0,-1,:,:].clone(), reward))
 
-        if memory.can_provide_sample(batch_size):
-            experiences = memory.sample(batch_size)
-            states, actions, rewards, next_states = extract_tensors(experiences)
-            current_q_values = QValues.get_current(policy_net, states, actions)
-            next_q_values = QValues.get_next(target_net, next_states)
-            target_q_values = (next_q_values * gamma) + rewards
-            loss = criterion(current_q_values, target_q_values.unsqueeze(1))
-            # loss = F.mse_loss(current_q_values, target_q_values.unsqueeze(1)) #BZX: huber loss is better? [TRY]
-            # print("loss=", loss.cpu().item())
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            state = next_state
 
-        if em.done:
-            rewards_hist.append(tol_reward)
-            running_reward = plot(rewards_hist, 100)
-            break
-    if episode % target_update == 0:
-        target_net.load_state_dict(policy_net.state_dict())
-        print("len of reply memory:", len(memory.memory))
+            if memory.can_provide_sample(batch_size):
+                experiences = memory.sample(batch_size)
+                states, actions, rewards, next_states = extract_tensors(experiences)
+                current_q_values = QValues.get_current(policy_net, states, actions)
+                next_q_values = QValues.get_next(target_net, next_states)
+                target_q_values = (next_q_values * gamma) + rewards
+                loss = criterion(current_q_values, target_q_values.unsqueeze(1))
+                # loss = F.mse_loss(current_q_values, target_q_values.unsqueeze(1)) #BZX: huber loss is better? [TRY]
+                # print("loss=", loss.cpu().item())
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                minibatch_updates_counter += 1
 
-    # BZX: checkpoint model
-    if episode % EPISODES_PER_CHECKPOINT == 0:
-        path = CHECK_POINT_PATH+GAME_NAME
-        if not os.path.exists(path):
-            os.makedirs(path)
-        # torch.save(policy_net.state_dict(), path + "Episodes:{}-Reward:{}-Time:".format(episode,running_reward) + \
-                   # datetime.datetime.now().strftime(DATE_FORMAT) +".pth")
-        print("exploration_rate=", strategy.get_exploration_rate(episode))
+            if minibatch_updates_counter % target_update == 0:
+                target_net.load_state_dict(policy_net.state_dict())
 
+                print("len of reply memory:", len(memory.memory))
+                print("minibatch_updates_counter = ", minibatch_updates_counter)
+                print("current_step of agent = ", agent.current_step)
+                print("exploration rate = ", strategy.get_exploration_rate(agent.current_step))
+
+            if em.done:
+                rewards_hist.append(tol_reward)
+                running_reward = plot(rewards_hist, 100)
+                break
+
+
+
+        # BZX: checkpoint model
+        if episode % EPISODES_PER_CHECKPOINT == 0:
+            path = CHECK_POINT_PATH+GAME_NAME
+            if not os.path.exists(path):
+                os.makedirs(path)
+            torch.save(policy_net.state_dict(), path + "Episodes:{}-Reward:{:.2f}-Time:".format(episode,running_reward) + \
+                       datetime.datetime.now().strftime(DATE_FORMAT) +".pth")
+            plt.savefig(FIGURES_PATH+"Episodes:{}-Time:".format(episode)+datetime.datetime.now().strftime(DATE_FORMAT) +".jpg")
+
+except:
+    heldoutset_file = open('heldoutset-exception', 'wb')
+    pickle.dump(HELD_OUT_SET, heldoutset_file)
+    heldoutset_file.close()
+plt.savefig()
 em.close()
+
+# write heldoutset
 

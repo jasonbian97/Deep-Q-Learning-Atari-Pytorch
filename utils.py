@@ -21,6 +21,7 @@ class ReplayMemory():
         self.capacity = capacity
         self.memory = []
         self.push_count = 0
+        # self.dtype = torch.uint8
 
     def push(self, experience):
         if len(self.memory) < self.capacity:
@@ -40,21 +41,28 @@ class ReplayMemory_economy():
         self.capacity = capacity
         self.memory = []
         self.push_count = 0
+        self.dtype = torch.uint8
     def push(self, experience):
+        state = (experience.state * 255).type(self.dtype)
+        next_state = (experience.next_state * 255).type(self.dtype)
+        new_experience = Experience(state,experience.action,next_state,experience.reward)
+
         if len(self.memory) < self.capacity:
-            self.memory.append(experience)
+            self.memory.append(new_experience)
         else:
-            self.memory[self.push_count % self.capacity] = experience
+            self.memory[self.push_count % self.capacity] = new_experience
+        # print(id(experience))
+        # print(id(self.memory[0]))
         self.push_count += 1
 
     def sample(self, batch_size):
-        experience_index = np.random.randint(0, len(self.memory)-3, size=32)
+        experience_index = np.random.randint(3, len(self.memory), size = batch_size)
         # memory_arr = np.array(self.memory)
         experiences = []
         for index in experience_index:
-            state = torch.stack(([self.memory[index+j].state for j in range(4)])).unsqueeze(0)
-            next_state = torch.stack(([self.memory[index+j].next_state for j in range(4)])).unsqueeze(0)
-            experiences.append(Experience(state, self.memory[index].action, next_state, self.memory[index].reward))
+            state = torch.stack(([self.memory[index+j].state for j in range(-3,1)])).unsqueeze(0)
+            next_state = torch.stack(([self.memory[index+j].next_state for j in range(-3,1)])).unsqueeze(0)
+            experiences.append(Experience(state.float()/255, self.memory[index].action, next_state.float()/255, self.memory[index].reward))
         # return random.sample(self.memory, batch_size)
         return experiences
 
@@ -73,7 +81,7 @@ class EpsilonGreedyStrategyExp():
                math.exp(-1. * current_step * self.decay)
 
 class EpsilonGreedyStrategyLinear():
-    def __init__(self, start, end, kneepoint=2000):
+    def __init__(self, start, end, kneepoint=1000000):
         self.start = start
         self.end = end
         self.kneepoint = kneepoint
