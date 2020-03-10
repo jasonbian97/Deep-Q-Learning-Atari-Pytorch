@@ -18,6 +18,7 @@ class BreakoutEnvManager():
         # BZx: running_queue: maintain the latest running_K images
         self.running_K = 4
         self.running_queue = []
+        self.is_lives_change = False
 
     def reset(self):
         self.env.reset()
