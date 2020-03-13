@@ -58,7 +58,7 @@ eps_kneepoint = 1000000 #BZX: the number of action taken by agent
 
 target_update = 10000 # per minibatch_updates_counter
 memory_size = 1000000
-lr = 0.00002
+lr = 0.00001
 num_episodes = 100000
 replay_start_size = 50000
 update_freq = 4
@@ -75,9 +75,9 @@ cfgs: the configuration of CNN architecture used in feature extraction.
 Option1 "standard": original setting in paper(2013,Mnih et al).
 Option2 TODO.. [TRY]
 """
-# availible models: DQN_CNN_2013,DQN_CNN_2015
-policy_net = DQN_CNN_2015(num_classes=em.num_actions_available(),init_weights=True).to(device)
-target_net = DQN_CNN_2015(num_classes=em.num_actions_available(),init_weights=True).to(device)
+# availible models: DQN_CNN_2013,DQN_CNN_2015, Dueling_DQN_2016_Modified
+policy_net = Dueling_DQN_2016_Modified(num_classes=em.num_actions_available(),init_weights=True).to(device)
+target_net = Dueling_DQN_2016_Modified(num_classes=em.num_actions_available(),init_weights=True).to(device)
 
 
 target_net.load_state_dict(policy_net.state_dict())
