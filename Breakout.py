@@ -135,24 +135,24 @@ for episode in range(num_episodes):
             optimizer.step()
             minibatch_updates_counter += 1
 
-        if minibatch_updates_counter % target_update == 0:
-            target_net.load_state_dict(policy_net.state_dict())
-            print("----")
-            print("len of reply memory:", len(memory.memory))
-            print("minibatch_updates_counter = ", minibatch_updates_counter)
-            print("current_step of agent = ", agent.current_step)
-            print("exploration rate = ", strategy.get_exploration_rate(agent.current_step))
+            if minibatch_updates_counter % target_update == 0:
+                target_net.load_state_dict(policy_net.state_dict())
+                print("----")
+                print("len of reply memory:", len(memory.memory))
+                print("minibatch_updates_counter = ", minibatch_updates_counter)
+                print("current_step of agent = ", agent.current_step)
+                print("exploration rate = ", strategy.get_exploration_rate(agent.current_step))
 
-        # BZX: checkpoint model
-        if minibatch_updates_counter % UPDATE_PER_CHECKPOINT == 0:
-            path = CHECK_POINT_PATH + GAME_NAME
-            if not os.path.exists(path):
-                os.makedirs(path)
-            torch.save(policy_net.state_dict(),
-                       path + "Iterations:{}-Reward:{:.2f}-Time:".format(minibatch_updates_counter, running_reward) + \
-                       datetime.datetime.now().strftime(DATE_FORMAT) + ".pth")
-            plt.savefig(FIGURES_PATH + "Iterations:{}-Time:".format(minibatch_updates_counter) + datetime.datetime.now().strftime(
-                DATE_FORMAT) + ".jpg")
+            # BZX: checkpoint model
+            if minibatch_updates_counter % UPDATE_PER_CHECKPOINT == 0:
+                path = CHECK_POINT_PATH + GAME_NAME
+                if not os.path.exists(path):
+                    os.makedirs(path)
+                torch.save(policy_net.state_dict(),
+                           path + "Iterations:{}-Reward:{:.2f}-Time:".format(minibatch_updates_counter, running_reward) + \
+                           datetime.datetime.now().strftime(DATE_FORMAT) + ".pth")
+                plt.savefig(FIGURES_PATH + "Iterations:{}-Time:".format(minibatch_updates_counter) + datetime.datetime.now().strftime(
+                    DATE_FORMAT) + ".jpg")
 
         if em.done:
             rewards_hist.append(tol_reward)
