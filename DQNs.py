@@ -155,3 +155,41 @@ class DQN_CNN_2015(nn.Module):
             elif isinstance(m, nn.Linear):
                 nn.init.kaiming_uniform_(m.weight, mode='fan_in', nonlinearity='relu')
                 nn.init.constant_(m.bias, 0)
+
+#TODO
+class Dueling_DQN_2016_Modified(nn.Module):
+    def __init__(self, num_classes=4, init_weights=True):
+        super().__init__()
+
+        self.cnn = nn.Sequential(nn.Conv2d(4, 32, kernel_size=8, stride=4),
+                                        nn.ReLU(True),
+                                        nn.Conv2d(32, 64, kernel_size=4, stride=2),
+                                        nn.ReLU(True),
+                                        nn.Conv2d(64, 64, kernel_size=3, stride=1),
+                                        nn.ReLU(True)
+                                        )
+        self.classifier = nn.Sequential(nn.Linear(7*7*64, 512),
+                                        nn.ReLU(True),
+                                        nn.Linear(512, num_classes)
+                                        )
+        if init_weights:
+            self._initialize_weights()
+
+    def forward(self, x):
+        x = self.cnn(x)
+        x = torch.flatten(x, start_dim=1)
+        x = self.classifier(x)
+        return x
+
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_uniform_(m.weight, mode='fan_in', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.kaiming_uniform_(m.weight, mode='fan_in', nonlinearity='relu')
+                nn.init.constant_(m.bias, 0)

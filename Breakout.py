@@ -47,6 +47,7 @@ UPDATE_PER_CHECKPOINT = 100000
 HELD_OUT_SET = []
 heldoutset_counter = 0
 minibatch_updates_counter = 1
+
 # Hyperparameters
 batch_size = 32
 gamma = 0.99
@@ -60,6 +61,7 @@ memory_size = 1000000
 lr = 0.00002
 num_episodes = 100000
 replay_start_size = 50000
+update_freq = 4
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 em = BreakoutEnvManager(device)
@@ -117,7 +119,7 @@ for episode in range(num_episodes):
 
         state = next_state
 
-        if memory.can_provide_sample(batch_size,replay_start_size):
+        if (agent.current_step % update_freq == 0) and memory.can_provide_sample(batch_size,replay_start_size):
             experiences = memory.sample(batch_size)
             states, actions, rewards, next_states = extract_tensors(experiences)
             current_q_values = QValues.get_current(policy_net, states, actions) # checked
@@ -135,10 +137,10 @@ for episode in range(num_episodes):
 
         if minibatch_updates_counter % target_update == 0:
             target_net.load_state_dict(policy_net.state_dict())
-
+            print("----")
             print("len of reply memory:", len(memory.memory))
             print("minibatch_updates_counter = ", minibatch_updates_counter)
-            # print("current_step of agent = ", agent.current_step)
+            print("current_step of agent = ", agent.current_step)
             print("exploration rate = ", strategy.get_exploration_rate(agent.current_step))
 
         # BZX: checkpoint model

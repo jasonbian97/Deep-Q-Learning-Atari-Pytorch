@@ -170,6 +170,9 @@ class QValues():
 
     @staticmethod
     def DDQN_get_next(policy_net, target_net, next_states, mode = "stacked"):
+        """
+        To get Q_target, we need twice inference stage (one for policy net, another for target net)
+        """
         if mode == "stacked":
             last_screens_of_state = next_states[:,-1,:,:] #(B,H,W)
             final_state_locations = last_screens_of_state.flatten(start_dim=1).max(dim=1)[0].eq(0).type(torch.bool)
