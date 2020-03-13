@@ -16,6 +16,11 @@ Experience = namedtuple(
     ('state', 'action', 'next_state', 'reward')
 )
 
+Eco_Experience = namedtuple(
+    'Eco_Experience',
+    ('state', 'action', 'reward')
+)
+
 class ReplayMemory():
     def __init__(self, capacity):
         self.capacity = capacity
@@ -43,9 +48,9 @@ class ReplayMemory_economy():
         self.push_count = 0
         self.dtype = torch.uint8
     def push(self, experience):
-        state = (experience.state * 255).type(self.dtype)
-        next_state = (experience.next_state * 255).type(self.dtype)
-        new_experience = Experience(state,experience.action,next_state,experience.reward)
+        state = (experience.state * 255).type(self.dtype).cpu()
+        # next_state = (experience.next_state * 255).type(self.dtype)
+        new_experience = Eco_Experience(state,experience.action,experience.reward)
 
         if len(self.memory) < self.capacity:
             self.memory.append(new_experience)
@@ -56,18 +61,18 @@ class ReplayMemory_economy():
         self.push_count += 1
 
     def sample(self, batch_size):
-        experience_index = np.random.randint(3, len(self.memory), size = batch_size)
+        experience_index = np.random.randint(3, len(self.memory)-1, size = batch_size)
         # memory_arr = np.array(self.memory)
         experiences = []
         for index in experience_index:
             state = torch.stack(([self.memory[index+j].state for j in range(-3,1)])).unsqueeze(0)
-            next_state = torch.stack(([self.memory[index+j].next_state for j in range(-3,1)])).unsqueeze(0)
-            experiences.append(Experience(state.float()/255, self.memory[index].action, next_state.float()/255, self.memory[index].reward))
+            next_state = torch.stack(([self.memory[index+1+j].state for j in range(-3,1)])).unsqueeze(0)
+            experiences.append(Experience(state.float().cuda()/255, self.memory[index].action, next_state.float().cuda()/255, self.memory[index].reward))
         # return random.sample(self.memory, batch_size)
         return experiences
 
-    def can_provide_sample(self, batch_size):
-        return len(self.memory) >= batch_size + 3
+    def can_provide_sample(self, batch_size, replay_start_size):
+        return (len(self.memory) >= replay_start_size) and (len(self.memory) >= batch_size + 3)
 
 
 class EpsilonGreedyStrategyExp():
@@ -81,14 +86,17 @@ class EpsilonGreedyStrategyExp():
                math.exp(-1. * current_step * self.decay)
 
 class EpsilonGreedyStrategyLinear():
-    def __init__(self, start, end, kneepoint=1000000):
+    def __init__(self, start, end, startpoint = 50000, kneepoint=1000000):
         self.start = start
         self.end = end
         self.kneepoint = kneepoint
+        self.startpoint = startpoint
 
     def get_exploration_rate(self, current_step):
+        if current_step < self.startpoint:
+            return 1.
         return self.end + \
-               np.maximum(0, (1-self.end)-(1-self.end)/self.kneepoint * current_step)
+               np.maximum(0, (1-self.end)-(1-self.end)/self.kneepoint * (current_step-self.startpoint))
 
 
 def get_moving_average(period, values):
@@ -118,7 +126,7 @@ def plot(values, moving_avg_period):
     moving_avg = get_moving_average(moving_avg_period, values)
     plt.plot(moving_avg)
     print("Episode", len(values), "\n",moving_avg_period, "episode moving avg:", moving_avg[-1])
-    plt.pause(0.001)
+    plt.pause(0.0001)
     if is_ipython: display.clear_output(wait=True)
     return moving_avg[-1]
 
@@ -145,18 +153,38 @@ class QValues():
         return policy_net(states).gather(dim=1, index=actions.unsqueeze(-1))
 
     @staticmethod
-    def get_next(target_net, next_states, mode = "stacked"):
+    def DQN_get_next(target_net, next_states, mode = "stacked"):
         if mode == "stacked":
             last_screens_of_state = next_states[:,-1,:,:] #(B,H,W)
             final_state_locations = last_screens_of_state.flatten(start_dim=1).max(dim=1)[0].eq(0).type(torch.bool)
             non_final_state_locations = (final_state_locations == False)
             non_final_states = next_states[non_final_state_locations] #(B',4,H,W)
             batch_size = next_states.shape[0]
+            print("# of none terminal states = ", batch_size)
             values = torch.zeros(batch_size).to(QValues.device)
             if non_final_states.shape[0]==0: # BZX: check if there is survival
                 print("EXCEPTION: this batch is all the last states of the episodes!")
                 return values
             values[non_final_state_locations] = target_net(non_final_states).max(dim=1)[0]
+            return values
+
+    @staticmethod
+    def DDQN_get_next(policy_net, target_net, next_states, mode = "stacked"):
+        if mode == "stacked":
+            last_screens_of_state = next_states[:,-1,:,:] #(B,H,W)
+            final_state_locations = last_screens_of_state.flatten(start_dim=1).max(dim=1)[0].eq(0).type(torch.bool)
+            non_final_state_locations = (final_state_locations == False)
+            non_final_states = next_states[non_final_state_locations] #(B',4,H,W)
+            batch_size = next_states.shape[0]
+            # print("# of none terminal states = ", batch_size)
+            values = torch.zeros(batch_size).to(QValues.device)
+            if non_final_states.shape[0]==0: # BZX: check if there is survival
+                print("EXCEPTION: this batch is all the last states of the episodes!")
+                return values
+            # BZX: different from DQN
+            argmax_a = policy_net(non_final_states).max(dim=1)[1]
+
+            values[non_final_state_locations] = target_net(non_final_states).gather(dim=1, index=argmax_a.unsqueeze(-1)).squeeze(-1)
             return values
 
 
@@ -184,7 +212,7 @@ def visualize_state(state):
         rowid = i // ncols
         colid = i % ncols
         # write row/col indices as axes' title for identification
-        axi.set_title("Row:" + str(rowid) + ", Col:" + str(colid))
+        # axi.set_title("Row:" + str(rowid) + ", Col:" + str(colid))
 
     # one can access the axes by ax[row_id][col_id]
     # do additional plotting on ax[row_id][col_id] of your choice
