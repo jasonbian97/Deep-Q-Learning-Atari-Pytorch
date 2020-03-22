@@ -8,6 +8,9 @@ import numpy as np
 import pickle
 import json
 import os
+import datetime
+
+
 is_ipython = 'inline' in matplotlib.get_backend()
 if is_ipython:
     from IPython import display
@@ -269,3 +272,12 @@ def init_tracker_dict():
     tracker["rewards_hist"] = []
     tracker["loss_hist"] = []
     return tracker
+
+def save_model(policy_net, tracker_dict, config_dict):
+    path = config_dict["CHECK_POINT_PATH"] + config_dict["GAME_NAME"] + "/"
+    if not os.path.exists(path):
+        os.makedirs(path)
+    torch.save(policy_net.state_dict(),
+               path + "Iterations:{}-Reward:{:.2f}-Time:".format(tracker_dict["minibatch_updates_counter"],
+                                                                 tracker_dict["running_reward"]) + \
+               datetime.datetime.now().strftime(config_dict["DATE_FORMAT"]) + ".pth")

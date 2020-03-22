@@ -31,14 +31,17 @@ criterion = torch.nn.SmoothL1Loss()
 # print("num_actions_available: ",em.num_actions_available())
 # print("action_meanings:" ,em.env.get_action_meanings())
 
-### Auxilarty variables
+# Auxilarty variables
 heldout_saver = HeldoutSaver(config_dict["HELDOUT_SET_DIR"],
                              config_dict["HELDOUT_SET_MAX_PER_BATCH"],
                              config_dict["HELDOUT_SAVE_RATE"])
 tracker_dict = init_tracker_dict()
 
 plt.figure()
-t1,t2 = 0, 0
+# for estimating the time
+t1,t2 = time.time(),time.time()
+num_target_update = 0
+
 for episode in range(hyperparams_dict["num_episodes"]):
     em.reset()
     state = em.get_state() # initialize sate
@@ -85,8 +88,9 @@ for episode in range(hyperparams_dict["num_episodes"]):
                 target_net.load_state_dict(policy_net.state_dict())
 
                 # estimate time
-                if tracker_dict["minibatch_updates_counter"]%2 == 0: t1 = time.time()
-                if tracker_dict["minibatch_updates_counter"]%2 == 1: t2 = time.time()
+                num_target_update += 1
+                if num_target_update % 2 == 0: t1 = time.time()
+                if num_target_update % 2 == 1: t2 = time.time()
                 print("=" * 50)
                 remaining_update_times = (config_dict["MAX_ITERATION"] - tracker_dict["minibatch_updates_counter"])// \
                                   hyperparams_dict["target_update"]
@@ -100,12 +104,8 @@ for episode in range(hyperparams_dict["num_episodes"]):
 
             # save checkpoint model
             if tracker_dict["minibatch_updates_counter"] % config_dict["UPDATE_PER_CHECKPOINT"] == 0:
-                path = config_dict["CHECK_POINT_PATH"] + config_dict["GAME_NAME"] + "/"
-                if not os.path.exists(path):
-                    os.makedirs(path)
-                torch.save(policy_net.state_dict(),
-                           path + "Iterations:{}-Reward:{:.2f}-Time:".format(tracker_dict["minibatch_updates_counter"], tracker_dict["running_reward"]) + \
-                           datetime.datetime.now().strftime(config_dict["DATE_FORMAT"]) + ".pth")
+                save_model(policy_net, tracker_dict, config_dict)
+
                 plt.savefig(config_dict["FIGURES_PATH"] + "Iterations:{}-Time:".format(tracker_dict["minibatch_updates_counter"]) + datetime.datetime.now().strftime(
                     config_dict["DATE_FORMAT"]) + ".jpg")
 
@@ -134,16 +134,18 @@ if config_dict["IS_SAVE_MIDDLE_POINT"]:
     midddle_point["tracker_dict"] = tracker_dict
     midddle_point["heldout_saver"] = heldout_saver
 
+    if not os.path.exists(config_dict["MIDDLE_POINT_PATH"]):
+        os.makedirs(config_dict["MIDDLE_POINT_PATH"])
     mdFileName = config_dict["MIDDLE_POINT_PATH"] + "MiddlePoint_State_" + datetime.datetime.now().strftime(config_dict["DATE_FORMAT"]) + ".pkl"
     middle_point_file = open(mdFileName, 'wb')
     pickle.dump(midddle_point,  middle_point_file)
     middle_point_file.close()
 
-    # save policy_net
-    if not os.path.exists(config_dict["MIDDLE_POINT_PATH"]):
-        os.makedirs(config_dict["MIDDLE_POINT_PATH"])
-    mdModelName = config_dict["MIDDLE_POINT_PATH"] + "MiddlePoint_Model_" + datetime.datetime.now().strftime(config_dict["DATE_FORMAT"]) + ".pth"
-    torch.save(policy_net.state_dict(),mdModelName)
+    # save policy_net and target_net
+    md_Policy_Net_fName = config_dict["MIDDLE_POINT_PATH"] + "md_Policy_Net_" + datetime.datetime.now().strftime(config_dict["DATE_FORMAT"]) + ".pth"
+    torch.save(policy_net.state_dict(),md_Policy_Net_fName)
+    md_Target_Net_fName = config_dict["MIDDLE_POINT_PATH"] + "md_Target_Net_" + datetime.datetime.now().strftime(config_dict["DATE_FORMAT"]) + ".pth"
+    torch.save(policy_net.state_dict(), md_Target_Net_fName)
 
 
 
