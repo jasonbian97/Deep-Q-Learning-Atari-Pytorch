@@ -1,0 +1,33 @@
+{
+  "config": {
+    "CHECK_POINT_PATH": "./checkpoints/",
+    "FIGURES_PATH": "./figures/",
+    "MIDDLE_POINT_PATH": "./MiddlePoints/",
+    "GAME_NAME": "Breakout",
+    "HELDOUT_SET_DIR": "./Heldout/",
+    "HELDOUT_SET_MAX_PER_BATCH": 5000,
+    "HELDOUT_SAVE_RATE": 0.002,
+    "MAX_ITERATION": 5000000,
+    "UPDATE_PER_CHECKPOINT": 10000,
+    "DATE_FORMAT": "%m-%d-%Y-%H-%M-%S",
+    "IS_GENERATE_HELDOUT": true,
+    "IS_SAVE_MIDDLE_POINT": true,
+    "IS_VISUALIZE_STATE": false,
+    "IS_RENDER_GAME_PROCESS": false,
+    "IS_BREAK_BY_MAX_ITERATION": true
+  },
+  "hyperparams": {
+    "batch_size": 32,
+    "gamma": 0.99,
+    "eps_start": 1,
+    "eps_end": 0.1,
+    "eps_startpoint": 50000,
+    "eps_kneepoint": 1000000,
+    "target_update": 10000,
+    "memory_size": 1000000,
+    "lr": 0.00002,
+    "num_episodes": 10000,
+    "replay_start_size": 50000,
+    "action_repeat": 4
+  }
+}
