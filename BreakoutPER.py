@@ -19,7 +19,7 @@ from DQNs import *
 from utils import *
 from EnvManagers import BreakoutEnvManager
 import pickle
-from torch.utils.tensorboard import SummaryWriter       
+# from torch.utils.tensorboard import SummaryWriter       
 
 class Agent():
     def __init__(self, strategy, num_actions, device):
@@ -42,8 +42,8 @@ class Agent():
 CHECK_POINT_PATH = "./checkpoints/"
 FIGURES_PATH = "./figures/"
 GAME_NAME = "Breakout/"
-PATH_to_log_dir = "./log"
 DATE_FORMAT = "%m-%d-%Y-%H-%M-%S"
+PATH_to_log_dir = "./log/" + datetime.datetime.now().strftime(DATE_FORMAT)
 UPDATE_PER_CHECKPOINT = 100000
 # generate heldout set
 HELD_OUT_SET = []
@@ -60,17 +60,24 @@ eps_kneepoint = 1000000 #BZX: the number of action taken by agent
 
 target_update = 10000 # per minibatch_updates_counter
 memory_size = 1000000
-lr = 0.00001
+lr = 0.00002/4
 num_episodes = 100000
 replay_start_size = 50000
 update_freq = 4
+
+# parameters for prioritized experience replay
+alpha = 0.6
+beta_start = 0.4 # alpha and beta_start are given in paper
+beta_startpoint = 50000
+beta_kneepoint = 1000000
+error_epsilon = 1e-5
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 em = BreakoutEnvManager(device)
 strategy = EpsilonGreedyStrategyLinear(eps_start, eps_end, eps_startpoint, eps_kneepoint)
 agent = Agent(strategy, em.num_actions_available(), device)
 # memory = ReplayMemory(memory_size)
-memory = ReplayMemory_economy(memory_size)
+memory = ReplayMemory_economy_PER(memory_size, alpha, beta_start, beta_startpoint, beta_kneepoint, error_epsilon)
 
 """ BZX:
 cfgs: the configuration of CNN architecture used in feature extraction.
@@ -93,7 +100,7 @@ criterion = torch.nn.SmoothL1Loss()
 rewards_hist = []
 running_reward = 0
 # plt.figure()
-writer = SummaryWriter(PATH_to_log_dir)
+# writer = SummaryWriter(PATH_to_log_dir)
 
 # try:
 for episode in range(num_episodes):
@@ -123,15 +130,19 @@ for episode in range(num_episodes):
         state = next_state
 
         if (agent.current_step % update_freq == 0) and memory.can_provide_sample(batch_size,replay_start_size):
-            experiences = memory.sample(batch_size)
+            experiences, experiences_index, weights = memory.sample(batch_size)
             states, actions, rewards, next_states = extract_tensors(experiences)
             current_q_values = QValues.get_current(policy_net, states, actions) # checked
             # next_q_values = QValues.DQN_get_next(target_net, next_states)
             next_q_values = QValues.DDQN_get_next(policy_net,target_net, next_states)
             target_q_values = (next_q_values * gamma) + rewards
-
-            loss = criterion(current_q_values, target_q_values.unsqueeze(1))
-            # loss = F.mse_loss(current_q_values, target_q_values.unsqueeze(1)) #BZX: huber loss is better? [TRY]
+            TD_errors = torch.abs(current_q_values - target_q_values.unsqueeze(1)).detach().cpu().numpy()
+            # update priorities
+            memory.update_priority(experiences_index, TD_errors.squeeze(1))
+            # compute loss
+            # print(weights)
+            # loss = criterion(current_q_values, target_q_values.unsqueeze(1))
+            loss = torch.mean(weights.detach() * (current_q_values - target_q_values.unsqueeze(1))**2)
             # print("loss=", loss.cpu().item())
             optimizer.zero_grad()
             loss.backward()
@@ -154,6 +165,8 @@ for episode in range(num_episodes):
                 torch.save(policy_net.state_dict(),
                            path + "Iterations:{}-Reward:{:.2f}-Time:".format(minibatch_updates_counter, running_reward) + \
                            datetime.datetime.now().strftime(DATE_FORMAT) + ".pth")
+                if not os.path.exists(FIGURES_PATH):
+                    os.makedirs(FIGURES_PATH)
                 plt.savefig(FIGURES_PATH + "Iterations:{}-Time:".format(minibatch_updates_counter) + datetime.datetime.now().strftime(
                     DATE_FORMAT) + ".jpg")
 
@@ -163,11 +176,11 @@ for episode in range(num_episodes):
             moving_avg = get_moving_average(moving_avg_period, rewards_hist)
             running_reward = moving_avg[-1]
             print("Episode", len(rewards_hist), "\n",moving_avg_period, "episode moving avg:", moving_avg[-1])
-            writer.add_scalars('reward', {'reward': rewards_hist[-1],
-                                             'reward_average': moving_avg[-1]}, episode)
+            # writer.add_scalars('reward', {'reward': rewards_hist[-1],
+            #                                  'reward_average': moving_avg[-1]}, episode)
             # running_reward = plot(rewards_hist, 100)
             break
-writer.close()
+# writer.close()
 
 # except:
 #     heldoutset_file = open('heldoutset-exception', 'wb')
