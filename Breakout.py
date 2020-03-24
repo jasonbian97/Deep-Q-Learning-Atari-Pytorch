@@ -24,7 +24,7 @@ policy_net = DQN_CNN_2015(num_classes=em.num_actions_available(),init_weights=Tr
 target_net = DQN_CNN_2015(num_classes=em.num_actions_available(),init_weights=True).to(device)
 
 target_net.load_state_dict(policy_net.state_dict())
-target_net.eval() # BZX: this network will only be used for inference.
+target_net.eval() # this network will only be used for inference.
 optimizer = optim.Adam(params=policy_net.parameters(), lr=hyperparams_dict["lr"])
 criterion = torch.nn.SmoothL1Loss()
 
