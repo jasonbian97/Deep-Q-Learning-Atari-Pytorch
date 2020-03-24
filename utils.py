@@ -5,12 +5,18 @@ import matplotlib
 import matplotlib.pyplot as plt
 from collections import namedtuple
 import numpy as np
-from sumtree import *
+import pickle
+import json
+import os
+import datetime
+from sumtree import * 
+
 is_ipython = 'inline' in matplotlib.get_backend()
-if is_ipython:
+""" if is_ipython:
     from IPython import display
 else:
-    matplotlib.use('TkAgg')
+    matplotlib.use('TkAgg') """
+matplotlib.use('Agg')
 
 Experience = namedtuple(
     'Experience',
@@ -22,7 +28,12 @@ Eco_Experience = namedtuple(
     ('state', 'action', 'reward')
 )
 
+
+
+
+
 class ReplayMemory():
+    # initial memory
     def __init__(self, capacity):
         self.capacity = capacity
         self.memory = []
@@ -43,11 +54,13 @@ class ReplayMemory():
         return len(self.memory) >= batch_size
 
 class ReplayMemory_economy():
+    # save one state per experience to improve memory size
     def __init__(self, capacity):
         self.capacity = capacity
         self.memory = []
         self.push_count = 0
         self.dtype = torch.uint8
+
     def push(self, experience):
         state = (experience.state * 255).type(self.dtype).cpu()
         # next_state = (experience.next_state * 255).type(self.dtype)
@@ -62,6 +75,7 @@ class ReplayMemory_economy():
         self.push_count += 1
 
     def sample(self, batch_size):
+        # randomly sample experiences
         experience_index = np.random.randint(3, len(self.memory)-1, size = batch_size)
         # memory_arr = np.array(self.memory)
         experiences = []
@@ -81,7 +95,7 @@ class ReplayMemory_economy_PER():
     def __init__(self, capacity, alpha=0.6, beta_start=0.4, beta_startpoint=50000, beta_kneepoint = 1000000, error_epsilon=1e-5):
         self.capacity = capacity
         self.memory = []
-        self.priority_tree = Sumtree(self.capacity)
+        self.priority_tree = Sumtree(self.capacity) # store priorities
         self.alpha = alpha
         self.beta = beta_start
         self.beta_increase = 1/(beta_kneepoint - beta_startpoint)
@@ -132,6 +146,7 @@ class ReplayMemory_economy_PER():
         return experiences, experience_index, weight
 
     def update_priority(self, index_list, TD_error_list):
+        # update priorities from TD error
         priorities_list = (np.abs(TD_error_list) + self.error_epsilon) ** self.alpha
         for index, priority in zip(index_list, priorities_list):
             self.priority_tree.update(index, priority)
@@ -139,8 +154,8 @@ class ReplayMemory_economy_PER():
     def can_provide_sample(self, batch_size, replay_start_size):
         return (len(self.memory) >= replay_start_size) and (len(self.memory) >= batch_size + 3)
 
-
 class EpsilonGreedyStrategyExp():
+    # compute epsilon in epsilon-greedy algorithm by exponentially decrement
     def __init__(self, start, end, decay):
         self.start = start
         self.end = end
@@ -151,6 +166,7 @@ class EpsilonGreedyStrategyExp():
                math.exp(-1. * current_step * self.decay)
 
 class EpsilonGreedyStrategyLinear():
+    # compute epsilon in epsilon-greedy algorithm by linearly decrement
     def __init__(self, start, end, startpoint = 50000, kneepoint=1000000):
         self.start = start
         self.end = end
@@ -163,6 +179,78 @@ class EpsilonGreedyStrategyLinear():
         return self.end + \
                np.maximum(0, (1-self.end)-(1-self.end)/self.kneepoint * (current_step-self.startpoint))
 
+class QValues():
+    """
+    This is the class that we used to calculate the q-values for the current states using the policy_net,
+     and the next states using the target_net
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    @staticmethod
+    def get_current(policy_net, states, actions):
+        return policy_net(states).gather(dim=1, index=actions.unsqueeze(-1))
+
+    @staticmethod
+    def DQN_get_next(target_net, next_states, mode = "stacked"):
+        if mode == "stacked":
+            last_screens_of_state = next_states[:,-1,:,:] #(B,H,W)
+            final_state_locations = last_screens_of_state.flatten(start_dim=1).max(dim=1)[0].eq(0).type(torch.bool)
+            non_final_state_locations = (final_state_locations == False)
+            non_final_states = next_states[non_final_state_locations] #(B',4,H,W)
+            batch_size = next_states.shape[0]
+            print("# of none terminal states = ", batch_size)
+            values = torch.zeros(batch_size).to(QValues.device)
+            if non_final_states.shape[0]==0: # BZX: check if there is survival
+                print("EXCEPTION: this batch is all the last states of the episodes!")
+                return values
+            with torch.no_grad():
+                values[non_final_state_locations] = target_net(non_final_states).detach().max(dim=1)[0]
+            return values
+
+    @staticmethod
+    def DDQN_get_next(policy_net, target_net, next_states, mode = "stacked"):
+        """
+        To get Q_target, we need twice inference stage (one for policy net, another for target net)
+        """
+        if mode == "stacked":
+            last_screens_of_state = next_states[:,-1,:,:] #(B,H,W)
+            final_state_locations = last_screens_of_state.flatten(start_dim=1).max(dim=1)[0].eq(0).type(torch.bool)
+            non_final_state_locations = (final_state_locations == False)
+            non_final_states = next_states[non_final_state_locations] #(B',4,H,W)
+            batch_size = next_states.shape[0]
+            # print("# of none terminal states = ", batch_size)
+            values = torch.zeros(batch_size).to(QValues.device)
+            if non_final_states.shape[0]==0: # BZX: check if there is survival
+                print("EXCEPTION: this batch is all the last states of the episodes!")
+                return values
+            # BZX: different from DQN
+            with torch.no_grad():
+                argmax_a = policy_net(non_final_states).detach().max(dim=1)[1]
+                values[non_final_state_locations] = target_net(non_final_states).detach().gather(dim=1, index=argmax_a.unsqueeze(-1)).squeeze(-1)
+            return values
+
+class HeldoutSaver():
+    def __init__(self, dir_path, max_size_per_batch, save_rate):
+
+        self.max_size_per_batch = max_size_per_batch
+        self.dir_path = dir_path
+        if not os.path.exists(self.dir_path):
+            os.mkdir(self.dir_path)
+        self.save_rate = save_rate
+        self.batch_counter = 0
+        self.heldout_set = []
+
+    def append(self, state):
+        if random.random() < self.save_rate:
+            self.heldout_set.append((state * 255).type(torch.uint8))  # store on GPU
+            if len(self.heldout_set) == self.max_size_per_batch:
+                heldoutset_file = open(self.dir_path + 'heldoutset-{}'.format(self.batch_counter), 'wb')
+                pickle.dump(self.heldout_set, heldoutset_file)
+                heldoutset_file.close()
+                self.heldout_set = []
+                self.batch_counter += 1
+    def set_batch_counter(self,batch_counter):
+        self.batch_counter = batch_counter
 
 def get_moving_average(period, values):
     values = torch.tensor(values, dtype=torch.float)
@@ -206,56 +294,6 @@ def extract_tensors(experiences):
 
     return (t1,t2,t3,t4)
 
-class QValues():
-    """
-    This is the class that we used to calculate the q-values for the current states using the policy_net,
-     and the next states using the target_net
-    """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    @staticmethod
-    def get_current(policy_net, states, actions):
-        return policy_net(states).gather(dim=1, index=actions.unsqueeze(-1))
-
-    @staticmethod
-    def DQN_get_next(target_net, next_states, mode = "stacked"):
-        if mode == "stacked":
-            last_screens_of_state = next_states[:,-1,:,:] #(B,H,W)
-            final_state_locations = last_screens_of_state.flatten(start_dim=1).max(dim=1)[0].eq(0).type(torch.bool)
-            non_final_state_locations = (final_state_locations == False)
-            non_final_states = next_states[non_final_state_locations] #(B',4,H,W)
-            batch_size = next_states.shape[0]
-            print("# of none terminal states = ", batch_size)
-            values = torch.zeros(batch_size).to(QValues.device)
-            if non_final_states.shape[0]==0: # BZX: check if there is survival
-                print("EXCEPTION: this batch is all the last states of the episodes!")
-                return values
-            values[non_final_state_locations] = target_net(non_final_states).max(dim=1)[0]
-            return values
-
-    @staticmethod
-    def DDQN_get_next(policy_net, target_net, next_states, mode = "stacked"):
-        """
-        To get Q_target, we need twice inference stage (one for policy net, another for target net)
-        """
-        if mode == "stacked":
-            last_screens_of_state = next_states[:,-1,:,:] #(B,H,W)
-            final_state_locations = last_screens_of_state.flatten(start_dim=1).max(dim=1)[0].eq(0).type(torch.bool)
-            non_final_state_locations = (final_state_locations == False)
-            non_final_states = next_states[non_final_state_locations] #(B',4,H,W)
-            batch_size = next_states.shape[0]
-            # print("# of none terminal states = ", batch_size)
-            values = torch.zeros(batch_size).to(QValues.device)
-            if non_final_states.shape[0]==0: # BZX: check if there is survival
-                print("EXCEPTION: this batch is all the last states of the episodes!")
-                return values
-            # BZX: different from DQN
-            argmax_a = policy_net(non_final_states).max(dim=1)[1]
-
-            values[non_final_state_locations] = target_net(non_final_states).gather(dim=1, index=argmax_a.unsqueeze(-1)).squeeze(-1)
-            return values
-
-
 def visualize_state(state):
     # settings
     nrows, ncols = 1, 4  # array of sub-plots
@@ -289,3 +327,35 @@ def visualize_state(state):
 
     plt.tight_layout(True)
     plt.show()
+
+def init_tracker_dict():
+    " init auxilary variables"
+    tracker = {}
+    tracker["minibatch_updates_counter"] = 1
+    tracker["running_reward"] = 0
+    tracker["rewards_hist"] = []
+    tracker["loss_hist"] = []
+    return tracker
+
+def save_model(policy_net, tracker_dict, config_dict):
+    path = config_dict["CHECK_POINT_PATH"] + config_dict["GAME_NAME"] + "/"
+    if not os.path.exists(path):
+        os.makedirs(path)
+    torch.save(policy_net.state_dict(),
+               path + "Iterations:{}-Reward:{:.2f}-Time:".format(tracker_dict["minibatch_updates_counter"],
+                                                                 tracker_dict["running_reward"]) + \
+               datetime.datetime.now().strftime(config_dict["DATE_FORMAT"]) + ".pth")
+
+def read_json(param_json_fname):
+    with open(param_json_fname) as fp:
+        params_dict = json.load(fp)
+
+    config_dict = params_dict["config"]
+    hyperparams_dict = params_dict["hyperparams"]
+    return config_dict, hyperparams_dict
+
+
+def load_Middle_Point(md_json_file_path):
+    with open(md_json_file_path) as fp:
+        md_path_dict = json.load(fp)
+    return md_path_dict
