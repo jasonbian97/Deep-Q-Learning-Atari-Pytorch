@@ -1,193 +1,196 @@
-import gym
-import math
-import random
-import numpy as np
-import matplotlib
-import matplotlib.pyplot as plt
-import time
-from itertools import count
-import os
-import sys
-import torch.nn.functional as F
+
 import datetime
-from PIL import Image
-import torch
 import torch.optim as optim
-import torchvision.transforms as T
+import time
 # customized import
 from DQNs import *
 from utils import *
 from EnvManagers import BreakoutEnvManager
-import pickle
-# from torch.utils.tensorboard import SummaryWriter       
+from Agent import *
 
-class Agent():
-    def __init__(self, strategy, num_actions, device):
-        self.current_step = 0
-        self.strategy = strategy
-        self.num_actions = num_actions
-        self.device = device
 
-    def select_action(self, state, policy_net):
-        rate = self.strategy.get_exploration_rate(self.current_step)
-        self.current_step += 1
-        # print("eps = ",rate)
-        if rate > random.random():
-            action = random.randrange(self.num_actions)
-            return torch.tensor([action]).to(self.device)  # explore
-        else:
-            with torch.no_grad():
-                return policy_net(state).argmax(dim=1).to(self.device)  # exploit
-# Configuration:
-CHECK_POINT_PATH = "./checkpoints/"
-FIGURES_PATH = "./figures/"
-GAME_NAME = "Breakout/"
-DATE_FORMAT = "%m-%d-%Y-%H-%M-%S"
-PATH_to_log_dir = "./log/" + datetime.datetime.now().strftime(DATE_FORMAT)
-UPDATE_PER_CHECKPOINT = 100000
-# generate heldout set
-HELD_OUT_SET = []
-heldoutset_counter = 0
-minibatch_updates_counter = 1
+param_json_fname = "DDQN_params.json"
+config_dict, hyperparams_dict = read_json(param_json_fname)
 
-# Hyperparameters
-batch_size = 32
-gamma = 0.99
-eps_start = 1
-eps_end = 0.1
-eps_startpoint = 50000
-eps_kneepoint = 1000000 #BZX: the number of action taken by agent
+if config_dict["IS_USED_TENSORBOARD"]:
+    from torch.utils.tensorboard import SummaryWriter 
 
-target_update = 10000 # per minibatch_updates_counter
-memory_size = 1000000
-lr = 0.00002/4
-num_episodes = 100000
-replay_start_size = 50000
-update_freq = 4
-
-# parameters for prioritized experience replay
-alpha = 0.6
-beta_start = 0.4 # alpha and beta_start are given in paper
-beta_startpoint = 50000
-beta_kneepoint = 1000000
-error_epsilon = 1e-5
-
+### core classes
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 em = BreakoutEnvManager(device)
-strategy = EpsilonGreedyStrategyLinear(eps_start, eps_end, eps_startpoint, eps_kneepoint)
+strategy = EpsilonGreedyStrategyLinear(hyperparams_dict["eps_start"], hyperparams_dict["eps_end"], hyperparams_dict["eps_startpoint"], hyperparams_dict["eps_kneepoint"])
 agent = Agent(strategy, em.num_actions_available(), device)
-# memory = ReplayMemory(memory_size)
-memory = ReplayMemory_economy_PER(memory_size, alpha, beta_start, beta_startpoint, beta_kneepoint, error_epsilon)
+# memory = ReplayMemory_economy(hyperparams_dict["memory_size"])
+memory = ReplayMemory_economy_PER(hyperparams_dict["memory_size"], hyperparams_dict["alpha"], hyperparams_dict["beta_start"], hyperparams_dict["beta_startpoint"], hyperparams_dict["beta_kneepoint"], hyperparams_dict["error_epsilon"])
 
-""" BZX:
-cfgs: the configuration of CNN architecture used in feature extraction.
-Option1 "standard": original setting in paper(2013,Mnih et al).
-Option2 TODO.. [TRY]
-"""
 # availible models: DQN_CNN_2013,DQN_CNN_2015, Dueling_DQN_2016_Modified
-policy_net = Dueling_DQN_2016_Modified(num_classes=em.num_actions_available(),init_weights=True).to(device)
-target_net = Dueling_DQN_2016_Modified(num_classes=em.num_actions_available(),init_weights=True).to(device)
-
+policy_net = DQN_CNN_2015(num_classes=em.num_actions_available(),init_weights=True).to(device)
+target_net = DQN_CNN_2015(num_classes=em.num_actions_available(),init_weights=True).to(device)
 
 target_net.load_state_dict(policy_net.state_dict())
-target_net.eval() # BZX: this network will only be used for inference.
-optimizer = optim.Adam(params=policy_net.parameters(), lr=lr)
+target_net.eval() # this network will only be used for inference.
+optimizer = optim.Adam(params=policy_net.parameters(), lr=hyperparams_dict["lr_PER"])
 criterion = torch.nn.SmoothL1Loss()
-# BZX: Sanity Check: print(policy_net)
+# can use tensorboard to track the reward
+if config_dict["IS_USED_TENSORBOARD"]:
+    PATH_to_log_dir = config_dict["TENSORBOARD_PATH"] + datetime.datetime.now().strftime(config_dict["DATE_FORMAT"])
+    writer = SummaryWriter(PATH_to_log_dir)
+
 # print("num_actions_available: ",em.num_actions_available())
 # print("action_meanings:" ,em.env.get_action_meanings())
 
-rewards_hist = []
-running_reward = 0
-# plt.figure()
-# writer = SummaryWriter(PATH_to_log_dir)
+# Auxilarty variables
+heldout_saver = HeldoutSaver(config_dict["HELDOUT_SET_DIR"],
+                             config_dict["HELDOUT_SET_MAX_PER_BATCH"],
+                             config_dict["HELDOUT_SAVE_RATE"])
+tracker_dict = init_tracker_dict()
 
-# try:
-for episode in range(num_episodes):
+plt.figure()
+# for estimating the time
+t1,t2 = time.time(),time.time()
+num_target_update = 0
+
+for episode in range(hyperparams_dict["num_episodes"]):
     em.reset()
     state = em.get_state() # initialize sate
     tol_reward = 0
-    # visualize_state(state)
     while(1):
-        # em.env.render() # BZX: will this slow down the speed?
-        action = agent.select_action(state, policy_net)
-        #print("action = ", action.cpu().item())
-        reward = em.take_action(action)
-        # print("reward = ", reward.cpu().item())
-        tol_reward += reward
-        next_state = em.get_state()
-        if random.random()<0.001:
-            HELD_OUT_SET.append((next_state * 255).type(torch.uint8)) #store on GPU
-            if len(HELD_OUT_SET) == 5000:
-                heldoutset_file = open('heldoutset-{}'.format(heldoutset_counter), 'wb')
-                pickle.dump(HELD_OUT_SET, heldoutset_file)
-                heldoutset_file.close()
-                HELD_OUT_SET=[]
-                heldoutset_counter += 1
-        # visualize_state(state)
-        memory.push(Experience(state[0,-1,:,:].clone(), action, "", reward))
+        # Visualization of game process and state
+        if config_dict["IS_RENDER_GAME_PROCESS"]: em.env.render() # BZX: will this slow down the speed?
+        if config_dict["IS_VISUALIZE_STATE"]: visualize_state(state)
+        if config_dict["IS_GENERATE_HELDOUT"]: heldout_saver.append(state) # generate heldout set for offline eval
 
+        # Given s, select a by either policy_net or random
+        action = agent.select_action(state, policy_net)
+        # collect reward from env along the action
+        reward = em.take_action(action)
+        tol_reward += reward
+        # after took a, get s'
+        next_state = em.get_state()
+        # push (s,a,s',r) into memory
+        memory.push(Experience(state[0,-1,:,:].clone(), action, "", reward))
+        # update current state
         state = next_state
 
-        if (agent.current_step % update_freq == 0) and memory.can_provide_sample(batch_size,replay_start_size):
-            experiences, experiences_index, weights = memory.sample(batch_size)
+        # After memory have been filled with enough samples, we update policy_net every 4 agent steps.
+        if (agent.current_step % hyperparams_dict["action_repeat"] == 0) and \
+                memory.can_provide_sample(hyperparams_dict["batch_size"], hyperparams_dict["replay_start_size"]):
+
+            # experiences = memory.sample(hyperparams_dict["batch_size"])
+            # sample experiences from memory
+            experiences, experiences_index, weights = memory.sample(hyperparams_dict["batch_size"])
             states, actions, rewards, next_states = extract_tensors(experiences)
             current_q_values = QValues.get_current(policy_net, states, actions) # checked
-            # next_q_values = QValues.DQN_get_next(target_net, next_states)
+            # next_q_values = QValues.DQN_get_next(target_net, next_states) # for DQN
             next_q_values = QValues.DDQN_get_next(policy_net,target_net, next_states)
-            target_q_values = (next_q_values * gamma) + rewards
+            target_q_values = (next_q_values * hyperparams_dict["gamma"]) + rewards
+            # compute TD error
             TD_errors = torch.abs(current_q_values - target_q_values.unsqueeze(1)).detach().cpu().numpy()
             # update priorities
             memory.update_priority(experiences_index, TD_errors.squeeze(1))
             # compute loss
-            # print(weights)
-            # loss = criterion(current_q_values, target_q_values.unsqueeze(1))
             loss = torch.mean(weights.detach() * (current_q_values - target_q_values.unsqueeze(1))**2)
-            # print("loss=", loss.cpu().item())
+            # loss = criterion(current_q_values, target_q_values.unsqueeze(1))
+            # update policy_network
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            minibatch_updates_counter += 1
 
-            if minibatch_updates_counter % target_update == 0:
+            tracker_dict["loss_hist"].append(loss.item())
+            tracker_dict["minibatch_updates_counter"] += 1
+
+            # update target_net
+            if tracker_dict["minibatch_updates_counter"] % hyperparams_dict["target_update"] == 0:
                 target_net.load_state_dict(policy_net.state_dict())
-                print("----")
-                print("len of reply memory:", len(memory.memory))
-                print("minibatch_updates_counter = ", minibatch_updates_counter)
+
+                # estimate time
+                num_target_update += 1
+                if num_target_update % 2 == 0: t1 = time.time()
+                if num_target_update % 2 == 1: t2 = time.time()
+                print("=" * 50)
+                remaining_update_times = (config_dict["MAX_ITERATION"] - tracker_dict["minibatch_updates_counter"])// \
+                                  hyperparams_dict["target_update"]
+                time_sec = abs(t1-t2) * remaining_update_times
+                print("estimated remaining time = {}h-{}min".format(time_sec//3600,(time_sec%3600)//60))
+                print("len of replay memory:", len(memory.memory))
+                print("minibatch_updates_counter = ", tracker_dict["minibatch_updates_counter"])
                 print("current_step of agent = ", agent.current_step)
                 print("exploration rate = ", strategy.get_exploration_rate(agent.current_step))
+                print("=" * 50)
 
-            # BZX: checkpoint model
-            if minibatch_updates_counter % UPDATE_PER_CHECKPOINT == 0:
-                path = CHECK_POINT_PATH + GAME_NAME
-                if not os.path.exists(path):
-                    os.makedirs(path)
-                torch.save(policy_net.state_dict(),
-                           path + "Iterations:{}-Reward:{:.2f}-Time:".format(minibatch_updates_counter, running_reward) + \
-                           datetime.datetime.now().strftime(DATE_FORMAT) + ".pth")
-                if not os.path.exists(FIGURES_PATH):
-                    os.makedirs(FIGURES_PATH)
-                plt.savefig(FIGURES_PATH + "Iterations:{}-Time:".format(minibatch_updates_counter) + datetime.datetime.now().strftime(
-                    DATE_FORMAT) + ".jpg")
+            # save checkpoint model
+            if tracker_dict["minibatch_updates_counter"] % config_dict["UPDATE_PER_CHECKPOINT"] == 0:
+                save_model(policy_net, tracker_dict, config_dict)
+                if not os.path.exists(config_dict["FIGURES_PATH"]):
+                    os.makedirs(config_dict["FIGURES_PATH"])
+                plt.savefig(config_dict["FIGURES_PATH"] + "Iterations:{}-Time:".format(tracker_dict["minibatch_updates_counter"]) + datetime.datetime.now().strftime(
+                    config_dict["DATE_FORMAT"]) + ".jpg")
 
         if em.done:
-            rewards_hist.append(tol_reward)
-            moving_avg_period = 100
-            moving_avg = get_moving_average(moving_avg_period, rewards_hist)
-            running_reward = moving_avg[-1]
-            print("Episode", len(rewards_hist), "\n",moving_avg_period, "episode moving avg:", moving_avg[-1])
-            # writer.add_scalars('reward', {'reward': rewards_hist[-1],
-            #                                  'reward_average': moving_avg[-1]}, episode)
-            # running_reward = plot(rewards_hist, 100)
+            # plot the figure of reward
+            tracker_dict["rewards_hist"].append(tol_reward)
+            tracker_dict["running_reward"] = plot(tracker_dict["rewards_hist"], 100)
+            # use tensorboard to track the reward
+            if config_dict["IS_USED_TENSORBOARD"]:
+                moving_avg_period = 100
+                tracker_dict["moving_avg"] = get_moving_average(moving_avg_period, tracker_dict["rewards_hist"])
+                writer.add_scalars('reward', {'reward': tracker_dict["rewards_hist"][-1],
+                                                'reward_average': tracker_dict["moving_avg"][-1]}, episode)
             break
-# writer.close()
-
-# except:
-#     heldoutset_file = open('heldoutset-exception', 'wb')
-#     pickle.dump(HELD_OUT_SET, heldoutset_file)
-#     heldoutset_file.close()
+    if config_dict["IS_BREAK_BY_MAX_ITERATION"] and \
+            tracker_dict["minibatch_updates_counter"] > config_dict["MAX_ITERATION"]:
+        break
 
 em.close()
+if config_dict["IS_USED_TENSORBOARD"]:
+    writer.close()
+# save loss figure
+plt.figure()
+plt.plot(tracker_dict["loss_hist"])
+plt.title("loss")
+plt.xlabel("iterations")
+plt.savefig(config_dict["FIGURES_PATH"] + "Loss-Iterations:{}-Time:".format(tracker_dict["minibatch_updates_counter"]) + datetime.datetime.now().strftime(
+                    config_dict["DATE_FORMAT"]) + ".jpg")
+
+if config_dict["IS_SAVE_MIDDLE_POINT"]:
+    # save core instances
+    if not os.path.exists(config_dict["MIDDLE_POINT_PATH"]):
+        os.makedirs(config_dict["MIDDLE_POINT_PATH"])
+
+    mdMemFileName = config_dict["MIDDLE_POINT_PATH"] + "MiddlePoint_Memory_" + datetime.datetime.now().strftime(
+        config_dict["DATE_FORMAT"]) + ".pkl"
+    middle_mem_file = open(mdMemFileName, 'wb')
+    pickle.dump(memory, middle_mem_file)
+    middle_mem_file.close()
+    del memory.memory
+    # del memory # make more memory space
+
+    midddle_point = {}
+    midddle_point["agent"] = agent
+    midddle_point["tracker_dict"] = tracker_dict
+    midddle_point["heldout_batch_counter"] = heldout_saver.batch_counter
+    midddle_point["strategy"] = strategy
+    mdStateFileName = config_dict["MIDDLE_POINT_PATH"] + "MiddlePoint_State_" + datetime.datetime.now().strftime(config_dict["DATE_FORMAT"]) + ".pkl"
+
+    middle_point_file = open(mdStateFileName, 'wb')
+    pickle.dump(midddle_point,  middle_point_file)
+    middle_point_file.close()
+
+    # save policy_net and target_net
+    md_Policy_Net_fName = config_dict["MIDDLE_POINT_PATH"] + "MiddlePoint_Policy_Net_" + datetime.datetime.now().strftime(config_dict["DATE_FORMAT"]) + ".pth"
+    torch.save(policy_net.state_dict(),md_Policy_Net_fName)
+    md_Target_Net_fName = config_dict["MIDDLE_POINT_PATH"] + "MiddlePoint_Target_Net_" + datetime.datetime.now().strftime(config_dict["DATE_FORMAT"]) + ".pth"
+    torch.save(policy_net.state_dict(), md_Target_Net_fName)
+
+    # save middle point files' path for continuous training
+    md_path_dict = {}
+    md_path_dict["mdMemFileName"] = mdMemFileName
+    md_path_dict["mdStateFileName"] = mdStateFileName
+    md_path_dict["md_Policy_Net_fName"] = md_Policy_Net_fName
+    md_path_dict["md_Target_Net_fName"] = md_Target_Net_fName
+    with open('tmp_middle_point_file_path.json', 'w') as fp:
+        json.dump(md_path_dict, fp)
+
 
 # write heldoutset
 
