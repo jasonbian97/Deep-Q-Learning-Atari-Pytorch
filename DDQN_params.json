@@ -17,6 +17,7 @@
     "IS_RENDER_GAME_PROCESS": false,
     "IS_BREAK_BY_MAX_ITERATION": true, 
     "IS_USED_TENSORBOARD": false 
+    "IS_BREAK_BY_MAX_ITERATION": true
   },
   "hyperparams": {
     "batch_size": 32,
@@ -34,6 +35,9 @@
     "memory_size": 1000000,
     "lr": 0.00006,
     "lr_PER": 0.000005,
+    "target_update": 10000,
+    "memory_size": 1000000,
+    "lr": 0.00006,
     "num_episodes": 100000,
     "replay_start_size": 50000,
     "action_repeat": 4
