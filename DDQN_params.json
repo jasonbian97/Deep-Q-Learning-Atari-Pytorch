@@ -3,6 +3,7 @@
     "CHECK_POINT_PATH": "./checkpoints/",
     "FIGURES_PATH": "./figures/",
     "MIDDLE_POINT_PATH": "./MiddlePoints/",
+    "TENSORBOARD_PATH": "./Tensorboard/", 
     "GAME_NAME": "Breakout",
     "HELDOUT_SET_DIR": "./Heldout/",
     "HELDOUT_SET_MAX_PER_BATCH": 5000,
@@ -14,6 +15,8 @@
     "IS_SAVE_MIDDLE_POINT": true,
     "IS_VISUALIZE_STATE": false,
     "IS_RENDER_GAME_PROCESS": false,
+    "IS_BREAK_BY_MAX_ITERATION": true, 
+    "IS_USED_TENSORBOARD": false 
     "IS_BREAK_BY_MAX_ITERATION": true
   },
   "hyperparams": {
@@ -23,6 +26,15 @@
     "eps_end": 0.1,
     "eps_startpoint": 50000,
     "eps_kneepoint": 1000000,
+    "alpha": 0.6,
+    "beta_start": 0.4,
+    "beta_startpoint": 50000, 
+    "beta_kneepoint": 1000000, 
+    "error_epsilon": 1e-5, 
+    "target_update": 10000,
+    "memory_size": 1000000,
+    "lr": 0.00006,
+    "lr_PER": 0.000005,
     "target_update": 10000,
     "memory_size": 1000000,
     "lr": 0.00006,
