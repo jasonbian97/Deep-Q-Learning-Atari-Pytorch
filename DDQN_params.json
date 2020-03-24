@@ -7,7 +7,7 @@
     "HELDOUT_SET_DIR": "./Heldout/",
     "HELDOUT_SET_MAX_PER_BATCH": 5000,
     "HELDOUT_SAVE_RATE": 0.002,
-    "MAX_ITERATION": 5000000,
+    "MAX_ITERATION": 400000,
     "UPDATE_PER_CHECKPOINT": 100000,
     "DATE_FORMAT": "%m-%d-%Y-%H-%M-%S",
     "IS_GENERATE_HELDOUT": true,
@@ -19,14 +19,14 @@
   "hyperparams": {
     "batch_size": 32,
     "gamma": 0.99,
-    "eps_start": 1,
+    "eps_start": 1.0,
     "eps_end": 0.1,
     "eps_startpoint": 50000,
     "eps_kneepoint": 1000000,
     "target_update": 10000,
     "memory_size": 1000000,
-    "lr": 0.00002,
-    "num_episodes": 10000,
+    "lr": 0.00006,
+    "num_episodes": 20000,
     "replay_start_size": 50000,
     "action_repeat": 4
   }

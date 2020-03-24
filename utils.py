@@ -10,7 +10,6 @@ import json
 import os
 import datetime
 
-
 is_ipython = 'inline' in matplotlib.get_backend()
 if is_ipython:
     from IPython import display
@@ -27,13 +26,7 @@ Eco_Experience = namedtuple(
     ('state', 'action', 'reward')
 )
 
-def read_json(param_json_fname):
-    with open(param_json_fname) as fp:
-        params_dict = json.load(fp)
 
-    config_dict = params_dict["config"]
-    hyperparams_dict = params_dict["hyperparams"]
-    return config_dict, hyperparams_dict
 
 
 
@@ -184,6 +177,8 @@ class HeldoutSaver():
                 heldoutset_file.close()
                 self.heldout_set = []
                 self.batch_counter += 1
+    def set_batch_counter(self,batch_counter):
+        self.batch_counter = batch_counter
 
 def get_moving_average(period, values):
     values = torch.tensor(values, dtype=torch.float)
@@ -226,9 +221,6 @@ def extract_tensors(experiences):
     t4 = torch.cat(batch.next_state)
 
     return (t1,t2,t3,t4)
-
-
-
 
 def visualize_state(state):
     # settings
@@ -281,3 +273,17 @@ def save_model(policy_net, tracker_dict, config_dict):
                path + "Iterations:{}-Reward:{:.2f}-Time:".format(tracker_dict["minibatch_updates_counter"],
                                                                  tracker_dict["running_reward"]) + \
                datetime.datetime.now().strftime(config_dict["DATE_FORMAT"]) + ".pth")
+
+def read_json(param_json_fname):
+    with open(param_json_fname) as fp:
+        params_dict = json.load(fp)
+
+    config_dict = params_dict["config"]
+    hyperparams_dict = params_dict["hyperparams"]
+    return config_dict, hyperparams_dict
+
+
+def load_Middle_Point(md_json_file_path):
+    with open(md_json_file_path) as fp:
+        md_path_dict = json.load(fp)
+    return md_path_dict

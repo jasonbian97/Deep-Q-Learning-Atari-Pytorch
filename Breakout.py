@@ -80,7 +80,7 @@ for episode in range(hyperparams_dict["num_episodes"]):
             loss.backward()
             optimizer.step()
 
-            tracker_dict["loss_hist"].append(loss)
+            tracker_dict["loss_hist"].append(loss.item())
             tracker_dict["minibatch_updates_counter"] += 1
 
             # update target_net
@@ -128,25 +128,42 @@ plt.savefig(config_dict["FIGURES_PATH"] + "Loss-Iterations:{}-Time:".format(trac
 
 if config_dict["IS_SAVE_MIDDLE_POINT"]:
     # save core instances
-    midddle_point = {}
-    midddle_point["agent"] = agent
-    midddle_point["memory"] = memory
-    midddle_point["tracker_dict"] = tracker_dict
-    midddle_point["heldout_saver"] = heldout_saver
-
     if not os.path.exists(config_dict["MIDDLE_POINT_PATH"]):
         os.makedirs(config_dict["MIDDLE_POINT_PATH"])
-    mdFileName = config_dict["MIDDLE_POINT_PATH"] + "MiddlePoint_State_" + datetime.datetime.now().strftime(config_dict["DATE_FORMAT"]) + ".pkl"
-    middle_point_file = open(mdFileName, 'wb')
+
+    mdMemFileName = config_dict["MIDDLE_POINT_PATH"] + "MiddlePoint_Memory_" + datetime.datetime.now().strftime(
+        config_dict["DATE_FORMAT"]) + ".pkl"
+    middle_mem_file = open(mdMemFileName, 'wb')
+    pickle.dump(memory, middle_mem_file)
+    middle_mem_file.close()
+    del memory.memory
+    # del memory # make more memory space
+
+    midddle_point = {}
+    midddle_point["agent"] = agent
+    midddle_point["tracker_dict"] = tracker_dict
+    midddle_point["heldout_batch_counter"] = heldout_saver.batch_counter
+    midddle_point["strategy"] = strategy
+    mdStateFileName = config_dict["MIDDLE_POINT_PATH"] + "MiddlePoint_State_" + datetime.datetime.now().strftime(config_dict["DATE_FORMAT"]) + ".pkl"
+
+    middle_point_file = open(mdStateFileName, 'wb')
     pickle.dump(midddle_point,  middle_point_file)
     middle_point_file.close()
 
     # save policy_net and target_net
-    md_Policy_Net_fName = config_dict["MIDDLE_POINT_PATH"] + "md_Policy_Net_" + datetime.datetime.now().strftime(config_dict["DATE_FORMAT"]) + ".pth"
+    md_Policy_Net_fName = config_dict["MIDDLE_POINT_PATH"] + "MiddlePoint_Policy_Net_" + datetime.datetime.now().strftime(config_dict["DATE_FORMAT"]) + ".pth"
     torch.save(policy_net.state_dict(),md_Policy_Net_fName)
-    md_Target_Net_fName = config_dict["MIDDLE_POINT_PATH"] + "md_Target_Net_" + datetime.datetime.now().strftime(config_dict["DATE_FORMAT"]) + ".pth"
+    md_Target_Net_fName = config_dict["MIDDLE_POINT_PATH"] + "MiddlePoint_Target_Net_" + datetime.datetime.now().strftime(config_dict["DATE_FORMAT"]) + ".pth"
     torch.save(policy_net.state_dict(), md_Target_Net_fName)
 
+    # save middle point files' path for continuous training
+    md_path_dict = {}
+    md_path_dict["mdMemFileName"] = mdMemFileName
+    md_path_dict["mdStateFileName"] = mdStateFileName
+    md_path_dict["md_Policy_Net_fName"] = md_Policy_Net_fName
+    md_path_dict["md_Target_Net_fName"] = md_Target_Net_fName
+    with open('tmp_middle_point_file_path.json', 'w') as fp:
+        json.dump(md_path_dict, fp)
 
 
 # write heldoutset
