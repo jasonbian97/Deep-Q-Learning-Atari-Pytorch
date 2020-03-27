@@ -8,20 +8,23 @@ Entrance of program:
 
 # TODO list:
 
--[ ] Implement Priority Queue and compare the performance.
+-[x] Implement Priority Queue and compare the performance.
 
--[ ] Evaluation script. Load model and take greedy strategy to interact with environment.
+-[x] Evaluation script. Load model and take greedy strategy to interact with environment.
 Test a few epochs and give average performance. Write the best one to .gif file for presentation.
+
+-[x] Implement continuous training script.
+
+-[x] Fix eps manager(change final state from 0.1 to 0.01); add evaluation step in the training loop; 
+write test result into gif; update Target_Net according to the # of actions instead of # of updates.
+
+-[x] Rewrite image preprocessing class to tackle with more general game input.(crop at (34,0,160,160)
 
 -[ ] Write validation script on heldout sets. Load models and heldout sets, track average max Q value on heldout sets.
 (NOTE: load and test models in time sequence indicated by the name of model file.)
 
 -[ ] Test two more Atari games. Give average performance(reward) and write .gif file. Store other figures & model for
 writing final report.
-
--[ ] Rewrite image preprocessing class to tackle with more general game input.(e.g. remove crop step)
-
--[x] Implement continuous training script.
 
 -[ ] Implement policy gradient for Atari games. [TBD]
 
@@ -48,9 +51,10 @@ console. Stop early and decrease the `MAX_ITERATION` if you cannot wait for such
 
 The breakout.py will automatically save the mid point state and variables for you if the program exit w/o exception.
 
-1. set the json file path.
+1. set the middle_point_json file path.
 
-2. check  DDQN_params.json, make sure that every parameter is set right.
+2. check  DDQN_params.json, make sure that every parameter is set right. Typically, you need to set a new `MAX_ITERATION`
+ or `num_episodes` .
 
 3. Run and prey :)
 
