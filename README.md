@@ -17,13 +17,12 @@ Test a few epochs and give average performance. Write the best one to .gif file 
 
 -[x] Fix eps manager(change final state from 0.1 to 0.01); add evaluation step in the training loop; 
 write test result into gif; update Target_Net according to the # of actions instead of # of updates.
-
--[x] Rewrite image preprocessing class to tackle with more general game input.(crop at (34,0,160,160)
+Rewrite image preprocessing class to tackle with more general game input.(crop at (34,0,160,160)
 
 -[ ] Write validation script on heldout sets. Load models and heldout sets, track average max Q value on heldout sets.
 (NOTE: load and test models in time sequence indicated by the name of model file.)
 
--[ ] Test two more Atari games. Give average performance(reward) and write .gif file. Store other figures & model for
+-[ ] Design experiment table. Test two more Atari games. Give average performance(reward) and write .gif file. Store other figures & model for
 writing final report.
 
 -[ ] Implement policy gradient for Atari games. [TBD]

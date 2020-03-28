@@ -18,13 +18,14 @@ class BreakoutEnvManager():
         # BZx: running_queue: maintain the latest running_K images
         self.running_K = 4
         self.running_queue = []
-        self.is_lives_change = False
+        self.is_lives_loss = False
+        self.current_lives = None
 
     def reset(self):
         self.env.reset()
         self.current_screen = None
         self.running_queue = [] #BZX: clear the state
-        self.current_lives = 5
+        # self.current_lives = 5
 
     def close(self):
         self.env.close()
@@ -40,15 +41,14 @@ class BreakoutEnvManager():
 
     def take_action(self, action):
         _, reward, self.done, lives = self.env.step(action.item())
-        if lives['ale.lives'] == self.current_lives - 1:
-            self.is_lives_change = True
+        if lives['ale.lives'] < self.current_lives:
+            self.is_lives_loss = True
         else:
-            self.is_lives_change = False
+            self.is_lives_loss = False
         self.current_lives = lives['ale.lives']
         # print(lives['ale.lives'])
-        return torch.tensor([np.sign(reward)], device=self.device)
+        return torch.tensor([reward], device=self.device)
         # torch.tensor(self.done, device=self.device), torch.tensro(lives, device=self.device)
-        #BZX:[TRY] better reward measurement
 
     def just_starting(self):
         return self.current_screen is None
@@ -74,7 +74,7 @@ class BreakoutEnvManager():
     def get_state(self):
         if self.just_starting():
             self.init_running_queue()
-        elif self.done or self.is_lives_change:
+        elif self.done or self.is_lives_loss:
             self.current_screen = self.get_processed_screen()
             black_screen = torch.zeros_like(self.current_screen)
             # BZX: update running_queue
@@ -104,21 +104,15 @@ class BreakoutEnvManager():
         return self.transform_screen_data(screen) #shape is [1,1,110,84]
 
     def crop_screen(self, screen):
-        screen_height = screen.shape[1]
-
-        # Strip off top and bottom
-        # top = int(screen_height/2 - 39)
-        # bottom = int(screen_height/2 + 45)
-        top = 20
-        bottom = 200
-        screen = screen[:, top:bottom, :] #BZX:(CHW)
+        bbox = [34,0,160,160]
+        screen = screen[:, bbox[0]:bbox[1], bbox[2]:bbox[3]] #BZX:(CHW)
         return screen
 
     def transform_screen_data(self, screen):
         # Convert to float, rescale, convert to tensor
         screen = np.ascontiguousarray(screen, dtype=np.float32) / 255
         screen = torch.from_numpy(screen)
-        screen = self.crop_screen(screen)  # [TRY: crop before Resize]
+        screen = self.crop_screen(screen)
         # Use torchvision package to compose image transforms
         resize = T.Compose([
             T.ToPILImage()
@@ -129,7 +123,7 @@ class BreakoutEnvManager():
         # add a batch dimension (BCHW)
         screen = resize(screen)
 
-        return screen.unsqueeze(0).to(self.device)   # BZX: Pay attention to the shape here. should be [1,1,110,84]
+        return screen.unsqueeze(0).to(self.device)   # BZX: Pay attention to the shape here. should be [1,1,84,84]
 
 
 class CartPoleEnvManager():

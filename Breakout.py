@@ -15,7 +15,8 @@ config_dict, hyperparams_dict = read_json(param_json_fname)
 ### core classes
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 em = BreakoutEnvManager(device)
-strategy = EpsilonGreedyStrategyLinear(hyperparams_dict["eps_start"], hyperparams_dict["eps_end"], hyperparams_dict["eps_startpoint"], hyperparams_dict["eps_kneepoint"])
+strategy = EpsilonGreedyStrategyLinear(hyperparams_dict["eps_start"], hyperparams_dict["eps_end"], hyperparams_dict["eps_final"],
+                                       hyperparams_dict["eps_startpoint"], hyperparams_dict["eps_kneepoint"],hyperparams_dict["eps_final_knee"])
 agent = Agent(strategy, em.num_actions_available(), device)
 memory = ReplayMemory_economy(hyperparams_dict["memory_size"])
 
@@ -54,13 +55,14 @@ for episode in range(hyperparams_dict["num_episodes"]):
 
         # Given s, select a by either policy_net or random
         action = agent.select_action(state, policy_net)
-        # collect reward from env along the action
+        # collect unclipped reward from env along the action
         reward = em.take_action(action)
         tol_reward += reward
+        tracker_dict["actions_counter"] += 1
         # after took a, get s'
         next_state = em.get_state()
         # push (s,a,s',r) into memory
-        memory.push(Experience(state[0,-1,:,:].clone(), action, "", reward))
+        memory.push(Experience(state[0,-1,:,:].clone(), action, "", torch.sign(reward))) #clip reward!!!
         # update current state
         state = next_state
 
@@ -84,7 +86,7 @@ for episode in range(hyperparams_dict["num_episodes"]):
             tracker_dict["minibatch_updates_counter"] += 1
 
             # update target_net
-            if tracker_dict["minibatch_updates_counter"] % hyperparams_dict["target_update"] == 0:
+            if tracker_dict["actions_counter"] % hyperparams_dict["target_update"] == 0:
                 target_net.load_state_dict(policy_net.state_dict())
 
                 # estimate time
@@ -113,6 +115,7 @@ for episode in range(hyperparams_dict["num_episodes"]):
             tracker_dict["rewards_hist"].append(tol_reward)
             tracker_dict["running_reward"] = plot(tracker_dict["rewards_hist"], 100)
             break
+
     if config_dict["IS_BREAK_BY_MAX_ITERATION"] and \
             tracker_dict["minibatch_updates_counter"] > config_dict["MAX_ITERATION"]:
         break
