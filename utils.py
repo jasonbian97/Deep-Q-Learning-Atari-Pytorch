@@ -11,12 +11,14 @@ import os
 import datetime
 import imageio
 from skimage.transform import resize as skimage_resize
+from sumtree import *
 
 is_ipython = 'inline' in matplotlib.get_backend()
-if is_ipython:
+""" if is_ipython:
     from IPython import display
 else:
-    matplotlib.use('TkAgg')
+    matplotlib.use('TkAgg') """
+matplotlib.use('Agg')
 
 Experience = namedtuple(
     'Experience',
@@ -33,6 +35,7 @@ Eco_Experience = namedtuple(
 
 
 class ReplayMemory():
+    # initial memory
     def __init__(self, capacity):
         self.capacity = capacity
         self.memory = []
@@ -53,11 +56,13 @@ class ReplayMemory():
         return len(self.memory) >= batch_size
 
 class ReplayMemory_economy():
+    # save one state per experience to improve memory size
     def __init__(self, capacity):
         self.capacity = capacity
         self.memory = []
         self.push_count = 0
         self.dtype = torch.uint8
+
     def push(self, experience):
         state = (experience.state * 255).type(self.dtype).cpu()
         # next_state = (experience.next_state * 255).type(self.dtype)
@@ -72,6 +77,7 @@ class ReplayMemory_economy():
         self.push_count += 1
 
     def sample(self, batch_size):
+        # randomly sample experiences
         experience_index = np.random.randint(3, len(self.memory)-1, size = batch_size)
         # memory_arr = np.array(self.memory)
         experiences = []
@@ -85,8 +91,73 @@ class ReplayMemory_economy():
     def can_provide_sample(self, batch_size, replay_start_size):
         return (len(self.memory) >= replay_start_size) and (len(self.memory) >= batch_size + 3)
 
+class ReplayMemory_economy_PER():
+    # Memory replay with priorited experience replay
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    def __init__(self, capacity, alpha=0.6, beta_start=0.4, beta_startpoint=50000, beta_kneepoint = 1000000, error_epsilon=1e-5):
+        self.capacity = capacity
+        self.memory = []
+        self.priority_tree = Sumtree(self.capacity) # store priorities
+        self.alpha = alpha
+        self.beta = beta_start
+        self.beta_increase = 1/(beta_kneepoint - beta_startpoint)
+        self.error_epsilon = error_epsilon
+        self.push_count = 0
+        self.dtype = torch.uint8
+
+    def push(self, experience):
+        state = (experience.state * 255).type(self.dtype).cpu()
+        # next_state = (experience.next_state * 255).type(self.dtype)
+        new_experience = Eco_Experience(state,experience.action,experience.reward)
+
+        if len(self.memory) < self.capacity:
+            self.memory.append(new_experience)
+        else:
+            self.memory[self.push_count % self.capacity] = new_experience
+        self.push_count += 1
+        # push new state to priority tree
+        self.priority_tree.push()
+
+    def sample(self, batch_size):
+        # get indices of experience by priorities
+        experience_index = []
+        experiences = []
+        priorities = []
+        segment = self.priority_tree.get_p_total()/batch_size
+        self.beta = np.min([1., self.beta + self.beta_increase])
+        for i in range(batch_size):
+            low = segment * i
+            high = segment * (i+1)
+            s = random.uniform(low, high)
+            index, p = self.priority_tree.sample(s)
+            experience_index.append(index)
+            priorities.append(p)
+            # get experience from index
+            if self.push_count > self.capacity:
+                state = torch.stack(([self.memory[index+j].state for j in range(-3,1)])).unsqueeze(0)
+                next_state = torch.stack(([self.memory[index+1+j].state for j in range(-3,1)])).unsqueeze(0)
+            else:
+                state = torch.stack(([self.memory[np.max(index+j, 0)].state for j in range(-3,1)])).unsqueeze(0)
+                next_state = torch.stack(([self.memory[np.max(index+1+j, 0)].state for j in range(-3,1)])).unsqueeze(0)
+            experiences.append(Experience(state.float().cuda()/255, self.memory[index].action, next_state.float().cuda()/255, self.memory[index].reward))
+        # compute weight
+        possibilities = priorities / self.priority_tree.get_p_total()
+        weight = np.power(self.priority_tree.length * possibilities, -self.beta)
+        weight = weight/np.max(weight)
+        weight = torch.tensor(weight[:,np.newaxis], dtype = torch.float).to(ReplayMemory_economy_PER.device)
+        return experiences, experience_index, weight
+
+    def update_priority(self, index_list, TD_error_list):
+        # update priorities from TD error
+        priorities_list = (np.abs(TD_error_list) + self.error_epsilon) ** self.alpha
+        for index, priority in zip(index_list, priorities_list):
+            self.priority_tree.update(index, priority)
+
+    def can_provide_sample(self, batch_size, replay_start_size):
+        return (len(self.memory) >= replay_start_size) and (len(self.memory) >= batch_size + 3)
 
 class EpsilonGreedyStrategyExp():
+    # compute epsilon in epsilon-greedy algorithm by exponentially decrement
     def __init__(self, start, end, decay):
         self.start = start
         self.end = end
@@ -98,6 +169,7 @@ class EpsilonGreedyStrategyExp():
 
 class EpsilonGreedyStrategyLinear():
     def __init__(self, start, end, final_eps = None, startpoint = 50000, kneepoint=1000000, final_knee_point = None):
+    # compute epsilon in epsilon-greedy algorithm by linearly decrement
         self.start = start
         self.end = end
         self.final_eps = final_eps
@@ -227,7 +299,7 @@ def plot(values, moving_avg_period):
     plt.plot(moving_avg)
     print("Episode", len(values), "\n",moving_avg_period, "episode moving avg:", moving_avg[-1])
     plt.pause(0.0001)
-    if is_ipython: display.clear_output(wait=True)
+    # if is_ipython: display.clear_output(wait=True)
     return moving_avg[-1]
 
 def extract_tensors(experiences):
