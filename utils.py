@@ -14,11 +14,11 @@ from skimage.transform import resize as skimage_resize
 from sumtree import *
 
 is_ipython = 'inline' in matplotlib.get_backend()
-""" if is_ipython:
+if is_ipython:
     from IPython import display
 else:
-    matplotlib.use('TkAgg') """
-matplotlib.use('Agg')
+    matplotlib.use('TkAgg')
+# matplotlib.use('Agg')
 
 Experience = namedtuple(
     'Experience',
@@ -355,16 +355,22 @@ def init_tracker_dict():
     tracker["running_reward"] = 0
     tracker["rewards_hist"] = []
     tracker["loss_hist"] = []
+    tracker["eval_model_list_txt"] = []
+    # only used in evaluation script
+    tracker["eval_reward_list"] = []
+    tracker["best_frame_for_gif"] = []
+    tracker["best_reward"] = 0
     return tracker
 
 def save_model(policy_net, tracker_dict, config_dict):
     path = config_dict["CHECK_POINT_PATH"] + config_dict["GAME_NAME"] + "/"
     if not os.path.exists(path):
         os.makedirs(path)
-    torch.save(policy_net.state_dict(),
-               path + "Iterations:{}-Reward:{:.2f}-Time:".format(tracker_dict["minibatch_updates_counter"],
+    fname = "Iterations:{}-Reward:{:.2f}-Time:".format(tracker_dict["minibatch_updates_counter"],
                                                                  tracker_dict["running_reward"]) + \
-               datetime.datetime.now().strftime(config_dict["DATE_FORMAT"]) + ".pth")
+               datetime.datetime.now().strftime(config_dict["DATE_FORMAT"]) + ".pth"
+    torch.save(policy_net.state_dict(), path + fname)
+    tracker_dict["eval_model_list_txt"].append(path + fname)
 
 def read_json(param_json_fname):
     with open(param_json_fname) as fp:
@@ -372,7 +378,8 @@ def read_json(param_json_fname):
 
     config_dict = params_dict["config"]
     hyperparams_dict = params_dict["hyperparams"]
-    return config_dict, hyperparams_dict
+    eval_dict = params_dict["eval"]
+    return config_dict, hyperparams_dict, eval_dict
 
 
 def load_Middle_Point(md_json_file_path):
@@ -380,7 +387,7 @@ def load_Middle_Point(md_json_file_path):
         md_path_dict = json.load(fp)
     return md_path_dict
 
-def generate_gif(gif_save_path, frames_for_gif, reward):
+def generate_gif(gif_save_path,model_name, frames_for_gif, reward):
     """
         Args:
             frames_for_gif: A sequence of (210, 160, 3) frames of an Atari game in RGB
@@ -391,6 +398,5 @@ def generate_gif(gif_save_path, frames_for_gif, reward):
     for idx, frame_idx in enumerate(frames_for_gif):
         frames_for_gif[idx] = skimage_resize(frame_idx, (420, 320, 3),
                                      preserve_range=True, order=0).astype(np.uint8)
-    fname = gif_save_path + "ind" + ".gif"
-    imageio.mimsave(fname,
-                    frames_for_gif, duration=1 / 30)
+    fname = gif_save_path + model_name + "-EvalReward:{}.gif".format(reward)
+    imageio.mimsave(fname, frames_for_gif, duration=1 / 30)

@@ -27,6 +27,7 @@ writing final report.
 
 -[ ] Implement policy gradient for Atari games. [TBD]
 
+-[ ] Possible bugs: initialization & final state representation?
 # How to run
 
 (1). Check DDQN_params.json, make sure that every parameter is set right.

@@ -10,7 +10,7 @@ from Agent import *
 
 
 param_json_fname = "DDQN_params.json"
-config_dict, hyperparams_dict = read_json(param_json_fname)
+config_dict, hyperparams_dict, eval_dict = read_json(param_json_fname)
 
 ### core classes
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -86,7 +86,7 @@ for episode in range(hyperparams_dict["num_episodes"]):
             tracker_dict["minibatch_updates_counter"] += 1
 
             # update target_net
-            if tracker_dict["actions_counter"] % hyperparams_dict["target_update"] == 0:
+            if tracker_dict["minibatch_updates_counter"] % hyperparams_dict["target_update"] == 0:
                 target_net.load_state_dict(policy_net.state_dict())
 
                 # estimate time
@@ -129,7 +129,30 @@ plt.xlabel("iterations")
 plt.savefig(config_dict["FIGURES_PATH"] + "Loss-Iterations:{}-Time:".format(tracker_dict["minibatch_updates_counter"]) + datetime.datetime.now().strftime(
                     config_dict["DATE_FORMAT"]) + ".jpg")
 
+# save tracker_dict["eval_model_list_txt"] to txt file
+if not os.path.exists(eval_dict["EVAL_MODEL_LIST_TXT_PATH"]):
+    os.makedirs(eval_dict["EVAL_MODEL_LIST_TXT_PATH"])
+txt_fname = "ModelName:{}-GameName:{}-Time:".format(config_dict["MODEL_NAME"],config_dict["GAME_NAME"]) + datetime.datetime.now().strftime(
+                    config_dict["DATE_FORMAT"]) + ".txt"
+with open( eval_dict["EVAL_MODEL_LIST_TXT_PATH"] + txt_fname,'w') as f:
+  f.write('\n'.join(tracker_dict["eval_model_list_txt"]))
+
+# pickle tracker_dict for report figures
+print("="*100)
+print("saving results...")
+print("=" * 100)
+if not os.path.exists(config_dict["RESULT_PATH"]):
+    os.makedirs(config_dict["RESULT_PATH"])
+tracker_fname = "ModelName:{}-GameName:{}-Time:".format(config_dict["MODEL_NAME"],config_dict["GAME_NAME"]) + datetime.datetime.now().strftime(
+                    config_dict["DATE_FORMAT"]) + ".pkl"
+with open(config_dict["RESULT_PATH"] + tracker_fname,'wb') as f:
+  pickle.dump(tracker_dict, f)
+
+
 if config_dict["IS_SAVE_MIDDLE_POINT"]:
+    print("="*100)
+    print("saving middel point...")
+    print("=" * 100)
     # save core instances
     if not os.path.exists(config_dict["MIDDLE_POINT_PATH"]):
         os.makedirs(config_dict["MIDDLE_POINT_PATH"])

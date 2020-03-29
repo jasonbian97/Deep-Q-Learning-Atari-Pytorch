@@ -25,6 +25,7 @@ class BreakoutEnvManager():
         self.env.reset()
         self.current_screen = None
         self.running_queue = [] #BZX: clear the state
+        self.is_lives_loss = False
         # self.current_lives = 5
 
     def close(self):
@@ -41,7 +42,9 @@ class BreakoutEnvManager():
 
     def take_action(self, action):
         _, reward, self.done, lives = self.env.step(action.item())
-        if lives['ale.lives'] < self.current_lives:
+        if self.is_initial_action():
+            self.current_lives = lives['ale.lives']
+        elif lives['ale.lives'] < self.current_lives:
             self.is_lives_loss = True
         else:
             self.is_lives_loss = False
@@ -52,7 +55,8 @@ class BreakoutEnvManager():
 
     def just_starting(self):
         return self.current_screen is None
-
+    def is_initial_action(self):
+        return sum(self.running_queue).sum() == 0
     def can_provide_state(self):
         """
         BZX: if the number of black screens is less or equal to 1, then return True.
@@ -104,8 +108,8 @@ class BreakoutEnvManager():
         return self.transform_screen_data(screen) #shape is [1,1,110,84]
 
     def crop_screen(self, screen):
-        bbox = [34,0,160,160]
-        screen = screen[:, bbox[0]:bbox[1], bbox[2]:bbox[3]] #BZX:(CHW)
+        bbox = [34,0,160,160] #(x,y,delta_x,delta_y)
+        screen = screen[:, bbox[0]:bbox[2]+bbox[0], bbox[1]:bbox[3]+bbox[1]] #BZX:(CHW)
         return screen
 
     def transform_screen_data(self, screen):

@@ -13,60 +13,85 @@ test a few episodes and average the reward.
 OOP?
 set policy_net.eval()
 """
-model_fpath = "./checkpoints/Breakout/Iterations:1400000-Reward:155.95-Time:03-27-2020-08-10-54.pth"
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# load model from file
-em = BreakoutEnvManager(device)
-policy_net = DQN_CNN_2015(num_classes=em.num_actions_available(),init_weights=False).to(device)
-policy_net.load_state_dict(torch.load(model_fpath))
-policy_net.eval() # this network will only be used for inference.
-# setup greedy strategy and Agent class
-strategy = FullGreedyStrategy(0.05)
-agent = Agent(strategy, em.num_actions_available(), device)
+
+param_json_fname = "DDQN_params.json"
+config_dict, hyperparams_dict, eval_dict = read_json(param_json_fname)
+
+filename = "./eval_model_list_txt/ModelName:2015_CNN_DQN-GameName:Breakout-Time:03-28-2020-18-20-28.txt" #TODO
+with open(filename) as f:
+    model_list = f.readlines()
+model_list = [x.strip() for x in model_list] # remove whitespace characters like `\n` at the end of each line
+subfolder = filename.split("/")[-1][:-4]
+# setup params
 
 # Auxilary variables
-config_dict = {}
-config_dict["IS_RENDER_GAME_PROCESS"] = True
-config_dict["IS_VISUALIZE_STATE"] = True
-config_dict["EVAL_EPISODE"] = 5
-config_dict["FIR_SAVE_PATH"] = "./GIF_Reuslts/"
 tracker_dict = {}
+tracker_dict["UPDATE_PER_CHECKPOINT"] = config_dict["UPDATE_PER_CHECKPOINT"]
 tracker_dict["eval_reward_list"] = []
-best_framegits_for_gif = None
-best_reward =  0
-for episode in range(config_dict["EVAL_EPISODE"]):
-    em.reset()
-    state = em.get_state() # initialize sate
-    reward_per_episode = 0
-    frames_for_gif = []
-    while(1):
-        if config_dict["IS_RENDER_GAME_PROCESS"]: em.env.render() #render in 'human  mode. BZX: will this slow down the speed?
-        if config_dict["IS_VISUALIZE_STATE"]: visualize_state(state)x
-        frame = em.render('rgb_array')
-        frames_for_gif.append(frame)
-        # Given s, select a by strategy
-        action = 1 if (em.done or em.is_lives_loss) else agent.select_action(state, policy_net)
-        # take action
-        reward = em.take_action(action)
-        # collect unclipped reward from env along the action
-        reward_per_episode += reward
-        # after took a, get s'
-        next_state = em.get_state()
-        # update current state
-        state = next_state
 
-        if em.done:
-            tracker_dict["eval_reward_list"].append(reward_per_episode)
-            break
-    #write git
-    if reward_per_episode > best_reward:
-        best_reward = reward_per_episode
-        #update best frames list
-        best_frames_for_gif = frames_for_gif.copy()
+for model_fpath in model_list:
+    print("testing:  ",model_fpath)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # load model from file
+    em = BreakoutEnvManager(device)
+    policy_net = DQN_CNN_2015(num_classes=em.num_actions_available(),init_weights=False).to(device)
+    policy_net.load_state_dict(torch.load(model_fpath))
+    policy_net.eval() # this network will only be used for inference.
+    # setup greedy strategy and Agent class
+    strategy = FullGreedyStrategy(0.01)
+    agent = Agent(strategy, em.num_actions_available(), device)
 
-print( tracker_dict["eval_reward_list"])
 
-generate_gif(config_dict["FIR_SAVE_PATH"],best_frames_for_gif,best_reward)
+    best_frames_for_gif = None
+    best_reward =  -1
+
+    reward_list_episodes = []
+    for episode in range(eval_dict["EVAL_EPISODE"]):
+        em.reset()
+        state = em.get_state() # initialize sate
+        reward_per_episode = 0
+        frames_for_gif = []
+
+        while(1):
+            if eval_dict["IS_RENDER_GAME_PROCESS"]: em.env.render() #render in 'human  mode. BZX: will this slow down the speed?
+            if eval_dict["IS_VISUALIZE_STATE"]: visualize_state(state)
+            frame = em.render('rgb_array')
+            frames_for_gif.append(frame)
+            # Given s, select a by strategy
+            if em.done or em.is_lives_loss or em.is_initial_action():
+                action = torch.tensor([1])
+            else:
+                action = agent.select_action(state, policy_net)
+            # take action
+            reward = em.take_action(action)
+            # collect unclipped reward from env along the action
+            reward_per_episode += reward
+            # after took a, get s'
+            next_state = em.get_state()
+            # update current state
+            state = next_state
+
+            if em.done:
+                reward_list_episodes.append(reward_per_episode.cpu().item())
+                break
+        #write git
+        if reward_per_episode > best_reward:
+            best_reward = reward_per_episode
+            #update best frames list
+            best_frames_for_gif = frames_for_gif.copy()
+
+    tracker_dict["eval_reward_list"].append(np.median(reward_list_episodes))
+    # print( tracker_dict["eval_reward_list"])
+    # save results
+    model_name = model_fpath.split("/")[-1][:-4]
+    generate_gif(eval_dict["GIF_SAVE_PATH"] + subfolder + "/", model_name, best_frames_for_gif, best_reward.cpu().item())
+
+    if not os.path.exists(config_dict["RESULT_PATH"]):
+        os.makedirs(config_dict["RESULT_PATH"])
+
+tracker_fname = subfolder + "-Eval.pkl"
+with open(config_dict["RESULT_PATH"] + tracker_fname, 'wb') as f:
+    pickle.dump(tracker_dict, f)
 
 
 
