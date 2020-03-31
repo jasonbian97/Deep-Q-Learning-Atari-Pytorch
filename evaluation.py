@@ -14,27 +14,28 @@ OOP?
 set policy_net.eval()
 """
 
-param_json_fname = "DDQN_params.json"
+param_json_fname = "DDQN_params.json" #TODO
+model_list_fname = "./eval_model_list_txt/ModelName:2015_CNN_DQN-GameName:Breakout-Time:03-30-2020-02-57-36.txt" #TODO
+
 config_dict, hyperparams_dict, eval_dict = read_json(param_json_fname)
 
-filename = "./eval_model_list_txt/ModelName:2015_CNN_DQN-GameName:Breakout-Time:03-28-2020-18-20-28.txt" #TODO
-with open(filename) as f:
+with open(model_list_fname) as f:
     model_list = f.readlines()
 model_list = [x.strip() for x in model_list] # remove whitespace characters like `\n` at the end of each line
-subfolder = filename.split("/")[-1][:-4]
+subfolder = model_list_fname.split("/")[-1][:-4]
 # setup params
 
 # Auxilary variables
 tracker_dict = {}
 tracker_dict["UPDATE_PER_CHECKPOINT"] = config_dict["UPDATE_PER_CHECKPOINT"]
 tracker_dict["eval_reward_list"] = []
-
+global_best_reward = -1
 for model_fpath in model_list:
     print("testing:  ",model_fpath)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # load model from file
-    em = BreakoutEnvManager(device)
-    policy_net = DQN_CNN_2015(num_classes=em.num_actions_available(),init_weights=False).to(device)
+    em = BreakoutEnvManager(device) #TODO
+    policy_net = DQN_CNN_2015(num_classes=em.num_actions_available(),init_weights=False).to(device) #TODO
     policy_net.load_state_dict(torch.load(model_fpath))
     policy_net.eval() # this network will only be used for inference.
     # setup greedy strategy and Agent class
@@ -74,7 +75,7 @@ for model_fpath in model_list:
             if em.done:
                 reward_list_episodes.append(reward_per_episode.cpu().item())
                 break
-        #write git
+        #write gif
         if reward_per_episode > best_reward:
             best_reward = reward_per_episode
             #update best frames list
@@ -83,8 +84,9 @@ for model_fpath in model_list:
     tracker_dict["eval_reward_list"].append(np.median(reward_list_episodes))
     # print( tracker_dict["eval_reward_list"])
     # save results
-    model_name = model_fpath.split("/")[-1][:-4]
-    generate_gif(eval_dict["GIF_SAVE_PATH"] + subfolder + "/", model_name, best_frames_for_gif, best_reward.cpu().item())
+    if  best_reward > 0.8 * np.median(tracker_dict["eval_reward_list"]):
+        model_name = model_fpath.split("/")[-1][:-4]
+        generate_gif(eval_dict["GIF_SAVE_PATH"] + subfolder + "/", model_name, best_frames_for_gif, global_best_reward.cpu().item())
 
     if not os.path.exists(config_dict["RESULT_PATH"]):
         os.makedirs(config_dict["RESULT_PATH"])

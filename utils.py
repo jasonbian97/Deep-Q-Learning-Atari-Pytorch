@@ -356,6 +356,7 @@ def init_tracker_dict():
     tracker["rewards_hist"] = []
     tracker["loss_hist"] = []
     tracker["eval_model_list_txt"] = []
+    tracker["rewards_hist_update_axis"] = []
     # only used in evaluation script
     tracker["eval_reward_list"] = []
     tracker["best_frame_for_gif"] = []

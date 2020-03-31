@@ -113,6 +113,7 @@ for episode in range(hyperparams_dict["num_episodes"]):
 
         if em.done:
             tracker_dict["rewards_hist"].append(tol_reward)
+            tracker_dict["rewards_hist_update_axis"].append(tracker_dict["minibatch_updates_counter"])
             tracker_dict["running_reward"] = plot(tracker_dict["rewards_hist"], 100)
             break
 
