@@ -4,7 +4,7 @@ import time
 # customized import
 from DQNs import *
 from utils import *
-from EnvManagers import BreakoutEnvManager
+from EnvManagers import AtariEnvManager
 from Agent import *
 
 
@@ -34,7 +34,7 @@ for model_fpath in model_list:
     print("testing:  ",model_fpath)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # load model from file
-    em = BreakoutEnvManager(device) #TODO
+    em = AtariEnvManager(device,game_env=config_dict["GAME_ENV"]) #TODO
     policy_net = DQN_CNN_2015(num_classes=em.num_actions_available(),init_weights=False).to(device) #TODO
     policy_net.load_state_dict(torch.load(model_fpath))
     policy_net.eval() # this network will only be used for inference.
@@ -59,7 +59,7 @@ for model_fpath in model_list:
             frame = em.render('rgb_array')
             frames_for_gif.append(frame)
             # Given s, select a by strategy
-            if em.done or em.is_lives_loss or em.is_initial_action():
+            if em.done or em.is_additional_ending or em.is_initial_action():
                 action = torch.tensor([1])
             else:
                 action = agent.select_action(state, policy_net)

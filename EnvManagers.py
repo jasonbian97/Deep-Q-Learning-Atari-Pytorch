@@ -7,10 +7,14 @@ import numpy as np
 import torch
 import torchvision.transforms as T
 
-class BreakoutEnvManager():
-    def __init__(self, device):
+class AtariEnvManager():
+    def __init__(self, device, game_env, is_use_additional_ending_criterion):
+        "avaliable game env: PongDeterministic-v4, BreakoutDeterministic-v4"
         self.device = device
-        self.env = gym.make('BreakoutDeterministic-v4').unwrapped #BZX: v4 automatically return skipped screens
+        self.game_env = game_env
+        # PongDeterministic-v4
+        self.env = gym.make(game_env).unwrapped
+        # self.env = gym.make('BreakoutDeterministic-v4').unwrapped #BZX: v4 automatically return skipped screens
         self.env.reset()
         self.current_screen = None
         self.done = False
@@ -18,14 +22,15 @@ class BreakoutEnvManager():
         # BZx: running_queue: maintain the latest running_K images
         self.running_K = 4
         self.running_queue = []
-        self.is_lives_loss = False
+        self.is_additional_ending = False # This may change to True along the game. 2 possible reason: loss of lives; negative reward.
         self.current_lives = None
+        self.is_use_additional_ending_criterion = is_use_additional_ending_criterion
 
     def reset(self):
         self.env.reset()
         self.current_screen = None
         self.running_queue = [] #BZX: clear the state
-        self.is_lives_loss = False
+        self.is_additional_ending = False
         # self.current_lives = 5
 
     def close(self):
@@ -42,28 +47,15 @@ class BreakoutEnvManager():
 
     def take_action(self, action):
         _, reward, self.done, lives = self.env.step(action.item())
-        if self.is_initial_action():
-            self.current_lives = lives['ale.lives']
-        elif lives['ale.lives'] < self.current_lives:
-            self.is_lives_loss = True
-        else:
-            self.is_lives_loss = False
-        self.current_lives = lives['ale.lives']
-        # print(lives['ale.lives'])
+        # for Pong: lives is always 0.0, so self.is_additional_ending will always be false
+        if self.is_use_additional_ending_criterion:
+            self.is_additonal_ending_criterion_met(lives,reward)
         return torch.tensor([reward], device=self.device)
-        # torch.tensor(self.done, device=self.device), torch.tensro(lives, device=self.device)
 
     def just_starting(self):
         return self.current_screen is None
     def is_initial_action(self):
         return sum(self.running_queue).sum() == 0
-    def can_provide_state(self):
-        """
-        BZX: if the number of black screens is less or equal to 1, then return True.
-        else return False
-        :return: bool
-        """
-        #TODO
 
     def init_running_queue(self):
         """
@@ -78,7 +70,7 @@ class BreakoutEnvManager():
     def get_state(self):
         if self.just_starting():
             self.init_running_queue()
-        elif self.done or self.is_lives_loss:
+        elif self.done or self.is_additional_ending:
             self.current_screen = self.get_processed_screen()
             black_screen = torch.zeros_like(self.current_screen)
             # BZX: update running_queue
@@ -93,6 +85,22 @@ class BreakoutEnvManager():
 
         return torch.stack(self.running_queue,dim=1).squeeze(2) #BZX: check if shape is (1KHW)
 
+    def is_additonal_ending_criterion_met(self,lives,reward):
+        "for different atari game, design different ending state criterion"
+        if self.game_env == "BreakoutDeterministic-v4":
+            if self.is_initial_action():
+                self.current_lives = lives['ale.lives']
+            elif lives['ale.lives'] < self.current_lives:
+                self.is_additional_ending = True
+            else:
+                self.is_additional_ending = False
+            self.current_lives = lives['ale.lives']
+        if self.game_env == "PongDeterministic-v4":
+            if reward < 0: #miss one ball will lead to a ending sate.
+                self.is_additional_ending = True
+            else:
+                self.is_additional_ending = False
+        return False
 
     def get_screen_height(self):
         screen = self.get_processed_screen()

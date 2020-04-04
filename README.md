@@ -13,7 +13,7 @@ Entrance of program:
 GAME_NAME # Set the game's name . This will help you create a new dir to save your result.
 MODEL_NAME # Set the algorithms and model you are using. This is only used for rename your result file, so you still need
 to change the model isntanace manually.
-MAX_ITERATION # In original paper, this is set to 25,000,000. But here we set it to 5,000,000. 
+MAX_ITERATION # In original paper, this is set to 25,000,000. But here we set it to 5,000,000 for Breakout.(2,500,000 for Pong will suffice.) 
 num_episodes # Max number of episodes. We set it to a huge number in default so normally this stop condition 
 usually won't be satisfied.
 # the program will stop when one of the above condition is met.

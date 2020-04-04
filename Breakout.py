@@ -5,7 +5,7 @@ import time
 # customized import
 from DQNs import *
 from utils import *
-from EnvManagers import BreakoutEnvManager
+from EnvManagers import AtariEnvManager
 from Agent import *
 
 
@@ -14,15 +14,23 @@ config_dict, hyperparams_dict, eval_dict = read_json(param_json_fname)
 
 ### core classes
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-em = BreakoutEnvManager(device)
+print("using:",device)
+em = AtariEnvManager(device, config_dict["GAME_ENV"], config_dict["IS_USE_ADDITIONAL_ENDING_CRITERION"])
+em.print_action_meanings()
 strategy = EpsilonGreedyStrategyLinear(hyperparams_dict["eps_start"], hyperparams_dict["eps_end"], hyperparams_dict["eps_final"],
                                        hyperparams_dict["eps_startpoint"], hyperparams_dict["eps_kneepoint"],hyperparams_dict["eps_final_knee"])
 agent = Agent(strategy, em.num_actions_available(), device)
 memory = ReplayMemory_economy(hyperparams_dict["memory_size"])
 
 # availible models: DQN_CNN_2013,DQN_CNN_2015, Dueling_DQN_2016_Modified
-policy_net = DQN_CNN_2015(num_classes=em.num_actions_available(),init_weights=True).to(device)
-target_net = DQN_CNN_2015(num_classes=em.num_actions_available(),init_weights=True).to(device)
+if config_dict["MODEL_NAME"] == "DQN_CNN_2015":
+    policy_net = DQN_CNN_2015(num_classes=em.num_actions_available(),init_weights=True).to(device)
+    target_net = DQN_CNN_2015(num_classes=em.num_actions_available(),init_weights=True).to(device)
+elif config_dict["MODEL_NAME"] == "Dueling_DQN_2016_Modified":
+    policy_net = Dueling_DQN_2016_Modified(num_classes=em.num_actions_available(), init_weights=True).to(device)
+    target_net = Dueling_DQN_2016_Modified(num_classes=em.num_actions_available(), init_weights=True).to(device)
+else:
+    print("No such model! Please check your configuration in .json file")
 
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval() # this network will only be used for inference.
@@ -55,6 +63,7 @@ for episode in range(hyperparams_dict["num_episodes"]):
 
         # Given s, select a by either policy_net or random
         action = agent.select_action(state, policy_net)
+        # print(action)
         # collect unclipped reward from env along the action
         reward = em.take_action(action)
         tol_reward += reward
@@ -163,7 +172,7 @@ if config_dict["IS_SAVE_MIDDLE_POINT"]:
     middle_mem_file = open(mdMemFileName, 'wb')
     pickle.dump(memory, middle_mem_file)
     middle_mem_file.close()
-    del memory.memory
+    del memory
     # del memory # make more memory space
 
     midddle_point = {}
