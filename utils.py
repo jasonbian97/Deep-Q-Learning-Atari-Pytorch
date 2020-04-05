@@ -9,14 +9,16 @@ import pickle
 import json
 import os
 import datetime
-from sumtree import * 
+import imageio
+from skimage.transform import resize as skimage_resize
+from sumtree import *
 
 is_ipython = 'inline' in matplotlib.get_backend()
-""" if is_ipython:
+if is_ipython:
     from IPython import display
 else:
-    matplotlib.use('TkAgg') """
-matplotlib.use('Agg')
+    matplotlib.use('TkAgg')
+# matplotlib.use('Agg')
 
 Experience = namedtuple(
     'Experience',
@@ -166,18 +168,35 @@ class EpsilonGreedyStrategyExp():
                math.exp(-1. * current_step * self.decay)
 
 class EpsilonGreedyStrategyLinear():
+    def __init__(self, start, end, final_eps = None, startpoint = 50000, kneepoint=1000000, final_knee_point = None):
     # compute epsilon in epsilon-greedy algorithm by linearly decrement
-    def __init__(self, start, end, startpoint = 50000, kneepoint=1000000):
         self.start = start
         self.end = end
+        self.final_eps = final_eps
         self.kneepoint = kneepoint
         self.startpoint = startpoint
+        self.final_knee_point = final_knee_point
 
     def get_exploration_rate(self, current_step):
         if current_step < self.startpoint:
             return 1.
-        return self.end + \
-               np.maximum(0, (1-self.end)-(1-self.end)/self.kneepoint * (current_step-self.startpoint))
+        mid_seg = self.end + \
+                   np.maximum(0, (1-self.end)-(1-self.end)/self.kneepoint * (current_step-self.startpoint))
+        if not self.final_eps:
+            return mid_seg
+        else:
+            if self.final_eps and self.final_knee_point and (current_step<self.kneepoint):
+                return mid_seg
+            else:
+                return self.final_eps + \
+                       (self.end - self.final_eps)/(self.final_knee_point - self.kneepoint)*(self.final_knee_point - current_step)
+
+class FullGreedyStrategy():
+    def __init__(self, exploration_rate = 0.):
+        self.exploration_rate = exploration_rate
+    def get_exploration_rate(self, current_step):
+        return self.exploration_rate
+
 
 class QValues():
     """
@@ -280,7 +299,7 @@ def plot(values, moving_avg_period):
     plt.plot(moving_avg)
     print("Episode", len(values), "\n",moving_avg_period, "episode moving avg:", moving_avg[-1])
     plt.pause(0.0001)
-    if is_ipython: display.clear_output(wait=True)
+    # if is_ipython: display.clear_output(wait=True)
     return moving_avg[-1]
 
 def extract_tensors(experiences):
@@ -332,19 +351,27 @@ def init_tracker_dict():
     " init auxilary variables"
     tracker = {}
     tracker["minibatch_updates_counter"] = 1
+    tracker["actions_counter"] = 1
     tracker["running_reward"] = 0
     tracker["rewards_hist"] = []
     tracker["loss_hist"] = []
+    tracker["eval_model_list_txt"] = []
+    tracker["rewards_hist_update_axis"] = []
+    # only used in evaluation script
+    tracker["eval_reward_list"] = []
+    tracker["best_frame_for_gif"] = []
+    tracker["best_reward"] = 0
     return tracker
 
 def save_model(policy_net, tracker_dict, config_dict):
     path = config_dict["CHECK_POINT_PATH"] + config_dict["GAME_NAME"] + "/"
     if not os.path.exists(path):
         os.makedirs(path)
-    torch.save(policy_net.state_dict(),
-               path + "Iterations:{}-Reward:{:.2f}-Time:".format(tracker_dict["minibatch_updates_counter"],
+    fname = "Iterations:{}-Reward:{:.2f}-Time:".format(tracker_dict["minibatch_updates_counter"],
                                                                  tracker_dict["running_reward"]) + \
-               datetime.datetime.now().strftime(config_dict["DATE_FORMAT"]) + ".pth")
+               datetime.datetime.now().strftime(config_dict["DATE_FORMAT"]) + ".pth"
+    torch.save(policy_net.state_dict(), path + fname)
+    tracker_dict["eval_model_list_txt"].append(path + fname)
 
 def read_json(param_json_fname):
     with open(param_json_fname) as fp:
@@ -352,10 +379,25 @@ def read_json(param_json_fname):
 
     config_dict = params_dict["config"]
     hyperparams_dict = params_dict["hyperparams"]
-    return config_dict, hyperparams_dict
+    eval_dict = params_dict["eval"]
+    return config_dict, hyperparams_dict, eval_dict
 
 
 def load_Middle_Point(md_json_file_path):
     with open(md_json_file_path) as fp:
         md_path_dict = json.load(fp)
     return md_path_dict
+
+def generate_gif(gif_save_path,model_name, frames_for_gif, reward):
+    """
+        Args:
+            frames_for_gif: A sequence of (210, 160, 3) frames of an Atari game in RGB
+            reward: Integer, Total reward of the episode that es ouputted as a gif
+    """
+    if not os.path.exists(gif_save_path):
+        os.makedirs(gif_save_path)
+    for idx, frame_idx in enumerate(frames_for_gif):
+        frames_for_gif[idx] = skimage_resize(frame_idx, (420, 320, 3),
+                                     preserve_range=True, order=0).astype(np.uint8)
+    fname = gif_save_path + model_name + "-EvalReward:{}.gif".format(reward)
+    imageio.mimsave(fname, frames_for_gif, duration=1 / 30)

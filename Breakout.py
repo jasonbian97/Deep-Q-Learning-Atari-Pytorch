@@ -5,23 +5,32 @@ import time
 # customized import
 from DQNs import *
 from utils import *
-from EnvManagers import BreakoutEnvManager
+from EnvManagers import AtariEnvManager
 from Agent import *
 
 
 param_json_fname = "DDQN_params.json"
-config_dict, hyperparams_dict = read_json(param_json_fname)
+config_dict, hyperparams_dict, eval_dict = read_json(param_json_fname)
 
 ### core classes
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-em = BreakoutEnvManager(device)
-strategy = EpsilonGreedyStrategyLinear(hyperparams_dict["eps_start"], hyperparams_dict["eps_end"], hyperparams_dict["eps_startpoint"], hyperparams_dict["eps_kneepoint"])
+print("using:",device)
+em = AtariEnvManager(device, config_dict["GAME_ENV"], config_dict["IS_USE_ADDITIONAL_ENDING_CRITERION"])
+em.print_action_meanings()
+strategy = EpsilonGreedyStrategyLinear(hyperparams_dict["eps_start"], hyperparams_dict["eps_end"], hyperparams_dict["eps_final"],
+                                       hyperparams_dict["eps_startpoint"], hyperparams_dict["eps_kneepoint"],hyperparams_dict["eps_final_knee"])
 agent = Agent(strategy, em.num_actions_available(), device)
 memory = ReplayMemory_economy(hyperparams_dict["memory_size"])
 
 # availible models: DQN_CNN_2013,DQN_CNN_2015, Dueling_DQN_2016_Modified
-policy_net = DQN_CNN_2015(num_classes=em.num_actions_available(),init_weights=True).to(device)
-target_net = DQN_CNN_2015(num_classes=em.num_actions_available(),init_weights=True).to(device)
+if config_dict["MODEL_NAME"] == "DQN_CNN_2015":
+    policy_net = DQN_CNN_2015(num_classes=em.num_actions_available(),init_weights=True).to(device)
+    target_net = DQN_CNN_2015(num_classes=em.num_actions_available(),init_weights=True).to(device)
+elif config_dict["MODEL_NAME"] == "Dueling_DQN_2016_Modified":
+    policy_net = Dueling_DQN_2016_Modified(num_classes=em.num_actions_available(), init_weights=True).to(device)
+    target_net = Dueling_DQN_2016_Modified(num_classes=em.num_actions_available(), init_weights=True).to(device)
+else:
+    print("No such model! Please check your configuration in .json file")
 
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval() # this network will only be used for inference.
@@ -54,13 +63,15 @@ for episode in range(hyperparams_dict["num_episodes"]):
 
         # Given s, select a by either policy_net or random
         action = agent.select_action(state, policy_net)
-        # collect reward from env along the action
+        # print(action)
+        # collect unclipped reward from env along the action
         reward = em.take_action(action)
         tol_reward += reward
+        tracker_dict["actions_counter"] += 1
         # after took a, get s'
         next_state = em.get_state()
         # push (s,a,s',r) into memory
-        memory.push(Experience(state[0,-1,:,:].clone(), action, "", reward))
+        memory.push(Experience(state[0,-1,:,:].clone(), action, "", torch.sign(reward))) #clip reward!!!
         # update current state
         state = next_state
 
@@ -111,8 +122,10 @@ for episode in range(hyperparams_dict["num_episodes"]):
 
         if em.done:
             tracker_dict["rewards_hist"].append(tol_reward)
+            tracker_dict["rewards_hist_update_axis"].append(tracker_dict["minibatch_updates_counter"])
             tracker_dict["running_reward"] = plot(tracker_dict["rewards_hist"], 100)
             break
+
     if config_dict["IS_BREAK_BY_MAX_ITERATION"] and \
             tracker_dict["minibatch_updates_counter"] > config_dict["MAX_ITERATION"]:
         break
@@ -126,7 +139,30 @@ plt.xlabel("iterations")
 plt.savefig(config_dict["FIGURES_PATH"] + "Loss-Iterations:{}-Time:".format(tracker_dict["minibatch_updates_counter"]) + datetime.datetime.now().strftime(
                     config_dict["DATE_FORMAT"]) + ".jpg")
 
+# save tracker_dict["eval_model_list_txt"] to txt file
+if not os.path.exists(eval_dict["EVAL_MODEL_LIST_TXT_PATH"]):
+    os.makedirs(eval_dict["EVAL_MODEL_LIST_TXT_PATH"])
+txt_fname = "ModelName:{}-GameName:{}-Time:".format(config_dict["MODEL_NAME"],config_dict["GAME_NAME"]) + datetime.datetime.now().strftime(
+                    config_dict["DATE_FORMAT"]) + ".txt"
+with open( eval_dict["EVAL_MODEL_LIST_TXT_PATH"] + txt_fname,'w') as f:
+  f.write('\n'.join(tracker_dict["eval_model_list_txt"]))
+
+# pickle tracker_dict for report figures
+print("="*100)
+print("saving results...")
+print("=" * 100)
+if not os.path.exists(config_dict["RESULT_PATH"]):
+    os.makedirs(config_dict["RESULT_PATH"])
+tracker_fname = "ModelName:{}-GameName:{}-Time:".format(config_dict["MODEL_NAME"],config_dict["GAME_NAME"]) + datetime.datetime.now().strftime(
+                    config_dict["DATE_FORMAT"]) + ".pkl"
+with open(config_dict["RESULT_PATH"] + tracker_fname,'wb') as f:
+  pickle.dump(tracker_dict, f)
+
+
 if config_dict["IS_SAVE_MIDDLE_POINT"]:
+    print("="*100)
+    print("saving middel point...")
+    print("=" * 100)
     # save core instances
     if not os.path.exists(config_dict["MIDDLE_POINT_PATH"]):
         os.makedirs(config_dict["MIDDLE_POINT_PATH"])
@@ -136,7 +172,7 @@ if config_dict["IS_SAVE_MIDDLE_POINT"]:
     middle_mem_file = open(mdMemFileName, 'wb')
     pickle.dump(memory, middle_mem_file)
     middle_mem_file.close()
-    del memory.memory
+    del memory
     # del memory # make more memory space
 
     midddle_point = {}
