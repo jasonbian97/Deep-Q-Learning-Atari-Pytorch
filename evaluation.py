@@ -8,14 +8,8 @@ from EnvManagers import AtariEnvManager
 from Agent import *
 
 
-"""
-test a few episodes and average the reward.
-OOP?
-set policy_net.eval()
-"""
-
-param_json_fname = "DDQN_params.json" #TODO
-model_list_fname = "./eval_model_list_txt/ModelName:2015_CNN_DQN-GameName:Breakout-Time:03-30-2020-02-57-36.txt" #TODO
+param_json_fname = "DDQN_params.json"
+model_list_fname = "./eval_model_list_txt/ModelName:Dueling_DQN_2016_Modified-GameName:Pong-Time:04-07-2020-18-30-30.txt" #TODO
 
 config_dict, hyperparams_dict, eval_dict = read_json(param_json_fname)
 
@@ -29,22 +23,28 @@ subfolder = model_list_fname.split("/")[-1][:-4]
 tracker_dict = {}
 tracker_dict["UPDATE_PER_CHECKPOINT"] = config_dict["UPDATE_PER_CHECKPOINT"]
 tracker_dict["eval_reward_list"] = []
-global_best_reward = -1
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# evaluate each checkpoint model
 for model_fpath in model_list:
     print("testing:  ",model_fpath)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     # load model from file
-    em = AtariEnvManager(device,game_env=config_dict["GAME_ENV"]) #TODO
-    policy_net = DQN_CNN_2015(num_classes=em.num_actions_available(),init_weights=False).to(device) #TODO
+    em = AtariEnvManager(device,game_env=config_dict["GAME_ENV"],
+                         is_use_additional_ending_criterion= eval_dict["IS_USE_ADDITIONAL_ENDING_CRITERION"])
+    if config_dict["MODEL_NAME"] == "DQN_CNN_2015":
+        policy_net = DQN_CNN_2015(num_classes=em.num_actions_available(),init_weights=False).to(device)
+    elif config_dict["MODEL_NAME"] == "Dueling_DQN_2016_Modified":
+        policy_net = Dueling_DQN_2016_Modified(num_classes=em.num_actions_available(), init_weights=False).to(device)
+    else:
+        print("No such model! Please check your configuration in .json file")
     policy_net.load_state_dict(torch.load(model_fpath))
     policy_net.eval() # this network will only be used for inference.
     # setup greedy strategy and Agent class
     strategy = FullGreedyStrategy(0.01)
     agent = Agent(strategy, em.num_actions_available(), device)
 
-
     best_frames_for_gif = None
-    best_reward =  -1
+    best_reward =  -99999
 
     reward_list_episodes = []
     for episode in range(eval_dict["EVAL_EPISODE"]):
@@ -86,7 +86,7 @@ for model_fpath in model_list:
     # save results
     if  best_reward > 0.8 * np.median(tracker_dict["eval_reward_list"]):
         model_name = model_fpath.split("/")[-1][:-4]
-        generate_gif(eval_dict["GIF_SAVE_PATH"] + subfolder + "/", model_name, best_frames_for_gif, global_best_reward.cpu().item())
+        generate_gif(eval_dict["GIF_SAVE_PATH"] + subfolder + "/", model_name, best_frames_for_gif, best_reward.cpu().item())
 
     if not os.path.exists(config_dict["RESULT_PATH"]):
         os.makedirs(config_dict["RESULT_PATH"])
