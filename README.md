@@ -1,4 +1,4 @@
-![Breakout_756](figures_for_README/Breakout_756.gif) ![Breakout_425](figures_for_README/Breakout_425.gif)
+![Breakout_756](figures_for_README/Breakout_756.gif | width=100) ![Breakout_425](figures_for_README/Breakout_425.gif)
 
 ![Pong_21](figures_for_README/Pong_21.gif) ![Pong_16](figures_for_README/Pong_16.gif)
 
