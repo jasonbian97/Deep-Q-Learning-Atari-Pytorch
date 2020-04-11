@@ -52,7 +52,7 @@ directory. Second, change the game environment instance and the model instance. 
 
 The program will automatically create the the directory like this:
 
-```python
+```markdown
 ├── GIF_Reuslts
 │   └── ModelName:2015_CNN_DQN-GameName:Breakout-Time:03-28-2020-18-20-28
 │       ├── Iterations:100000-Reward:0.69-Time:03-28-2020-18-20-27-EvalReward:0.0.gif
