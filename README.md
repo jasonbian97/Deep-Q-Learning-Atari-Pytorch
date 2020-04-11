@@ -1,8 +1,13 @@
+![Breakout_756](figures_for_README/Breakout_756.gif) ![Breakout_425](figures_for_README/Breakout_425.gif)
+
+![Pong_21](figures_for_README/Pong_21.gif) ![Pong_16](figures_for_README/Pong_16.gif)
+
+![](figures_for_README/Iterations:1200000-Time:04-08-2020-22-06-38.jpg) ![](figures_for_README/Iterations:5000000-Time:03-30-2020-02-57-22.jpg)
 # RL-Atari-gym
 Reinforcement Learning on Atari Games and Control
 
 Entrance of program: 
-1. Breakout.py & BreakoutPER.py
+- Breakout.py
 
 
 # How to run
