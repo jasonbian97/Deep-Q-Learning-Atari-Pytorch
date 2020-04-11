@@ -2,7 +2,9 @@
 
 ![Pong_21](figures_for_README/Pong_21.gif) ![Pong_16](figures_for_README/Pong_16.gif)
 
-<img src="figures_for_README/Iterations:1200000-Time:04-08-2020-22-06-38.jpg" width="300"> <img src="figures_for_README/Iterations:5000000-Time:03-30-2020-02-57-22.jpg" width="300">
+<img src="figures_for_README/Breakout_756.gif" width="400"> <img src="figures_for_README/Breakout_425.gif" width="400">
+
+<img src="figures_for_README/Iterations:1200000-Time:04-08-2020-22-06-38.jpg" width="400"> <img src="figures_for_README/Iterations:5000000-Time:03-30-2020-02-57-22.jpg" width="400">
 
 # RL-Atari-gym
 Reinforcement Learning on Atari Games and Control
