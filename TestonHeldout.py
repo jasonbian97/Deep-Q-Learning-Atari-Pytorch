@@ -45,13 +45,13 @@ else:
 tracker_dict = {}
 tracker_dict["UPDATE_PER_CHECKPOINT"] = config_dict["UPDATE_PER_CHECKPOINT"]
 tracker_dict["Qvalue_average_list"] = []
-global_best_reward = -1
 for model_fpath in model_list:
     print("testing:  ",model_fpath)
     # load model from file
     policy_net.load_state_dict(torch.load(model_fpath))
-    policy_net.eval() # this network will only be used for inference.
+    policy_net.eval() 
     Qvalue_model = []
+    # load heldout set
     hfiles = os.listdir(config_dict["HELDOUT_SET_DIR"])
     for hfile in hfiles:
         with open(config_dict["HELDOUT_SET_DIR"]+'/'+hfile,'rb') as f:
