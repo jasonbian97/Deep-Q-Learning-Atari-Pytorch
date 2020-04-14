@@ -31,6 +31,9 @@ class Sumtree():
         # return total priorities
         return self.tree[0]
 
+    def get_p_min(self):
+        return min(self.tree[self.capacity-1:self.length+self.capacity-1])
+
     def get_by_priority(self, index, s):
         # get index of node by priority s
         left_child = index*2 + 1

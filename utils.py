@@ -82,8 +82,12 @@ class ReplayMemory_economy():
         # memory_arr = np.array(self.memory)
         experiences = []
         for index in experience_index:
-            state = torch.stack(([self.memory[index+j].state for j in range(-3,1)])).unsqueeze(0)
-            next_state = torch.stack(([self.memory[index+1+j].state for j in range(-3,1)])).unsqueeze(0)
+            if self.push_count > self.capacity:
+                state = torch.stack(([self.memory[index+j].state for j in range(-3,1)])).unsqueeze(0)
+                next_state = torch.stack(([self.memory[index+1+j].state for j in range(-3,1)])).unsqueeze(0)
+            else:
+                state = torch.stack(([self.memory[np.max(index+j, 0)].state for j in range(-3,1)])).unsqueeze(0)
+                next_state = torch.stack(([self.memory[np.max(index+1+j, 0)].state for j in range(-3,1)])).unsqueeze(0)
             experiences.append(Experience(state.float().cuda()/255, self.memory[index].action, next_state.float().cuda()/255, self.memory[index].reward))
         # return random.sample(self.memory, batch_size)
         return experiences
@@ -142,13 +146,16 @@ class ReplayMemory_economy_PER():
             experiences.append(Experience(state.float().cuda()/255, self.memory[index].action, next_state.float().cuda()/255, self.memory[index].reward))
         # compute weight
         possibilities = priorities / self.priority_tree.get_p_total()
+        min_possibility = self.priority_tree.get_p_min()
         weight = np.power(self.priority_tree.length * possibilities, -self.beta)
-        weight = weight/np.max(weight)
+        max_weight = np.power(self.priority_tree.length * min_possibility, -self.beta)
+        weight = weight/max_weight
         weight = torch.tensor(weight[:,np.newaxis], dtype = torch.float).to(ReplayMemory_economy_PER.device)
         return experiences, experience_index, weight
 
     def update_priority(self, index_list, TD_error_list):
         # update priorities from TD error
+        # priorities_list = np.abs(TD_error_list) + self.error_epsilon
         priorities_list = (np.abs(TD_error_list) + self.error_epsilon) ** self.alpha
         for index, priority in zip(index_list, priorities_list):
             self.priority_tree.update(index, priority)
@@ -367,7 +374,7 @@ def save_model(policy_net, tracker_dict, config_dict):
     path = config_dict["CHECK_POINT_PATH"] + config_dict["GAME_NAME"] + "/"
     if not os.path.exists(path):
         os.makedirs(path)
-    fname = "Iterations:{}-Reward:{:.2f}-Time:".format(tracker_dict["minibatch_updates_counter"],
+    fname = "Iterations_{}-Reward{:.2f}-Time_".format(tracker_dict["minibatch_updates_counter"],
                                                                  tracker_dict["running_reward"]) + \
                datetime.datetime.now().strftime(config_dict["DATE_FORMAT"]) + ".pth"
     torch.save(policy_net.state_dict(), path + fname)
@@ -399,5 +406,5 @@ def generate_gif(gif_save_path,model_name, frames_for_gif, reward):
     for idx, frame_idx in enumerate(frames_for_gif):
         frames_for_gif[idx] = skimage_resize(frame_idx, (420, 320, 3),
                                      preserve_range=True, order=0).astype(np.uint8)
-    fname = gif_save_path + model_name + "-EvalReward:{}.gif".format(reward)
+    fname = gif_save_path + model_name + "-EvalReward_{}.gif".format(reward)
     imageio.mimsave(fname, frames_for_gif, duration=1 / 30)

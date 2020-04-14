@@ -116,8 +116,12 @@ class AtariEnvManager():
         return self.transform_screen_data(screen) #shape is [1,1,110,84]
 
     def crop_screen(self, screen):
-        bbox = [34,0,160,160] #(x,y,delta_x,delta_y)
-        screen = screen[:, bbox[0]:bbox[2]+bbox[0], bbox[1]:bbox[3]+bbox[1]] #BZX:(CHW)
+        if self.game_env == "BreakoutDeterministic-v4" or self.game_env == "PongDeterministic-v4":
+            bbox = [34,0,160,160] #(x,y,delta_x,delta_y)
+            screen = screen[:, bbox[0]:bbox[2]+bbox[0], bbox[1]:bbox[3]+bbox[1]] #BZX:(CHW)
+        if self.game_env == "GopherDeterministic-v4":
+            bbox = [110,0,120,160]
+            screen = screen[:, bbox[0]:bbox[2]+bbox[0], bbox[1]:bbox[3]+bbox[1]]
         return screen
 
     def transform_screen_data(self, screen):
