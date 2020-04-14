@@ -1,8 +1,8 @@
 {
   "config": {
-    "MODEL_NAME": "Dueling_DQN_2016_Modified",
-    "GAME_NAME": "Pong",
-    "GAME_ENV": "PongDeterministic-v4",
+    "MODEL_NAME": "DQN_CNN_2015",
+    "GAME_NAME": "Breakout",
+    "GAME_ENV": "BreakoutDeterministic-v4",
     "IS_USE_ADDITIONAL_ENDING_CRITERION": false,
     "CHECK_POINT_PATH": "./checkpoints/",
     "FIGURES_PATH": "./figures/",
@@ -21,8 +21,9 @@
     "IS_VISUALIZE_STATE": false,
     "IS_RENDER_GAME_PROCESS": false,
     "IS_BREAK_BY_MAX_FRAMES": false,
-    "IS_USED_TENSORBOARD": false ,
-    "IS_BREAK_BY_MAX_ITERATION": true
+    "IS_USED_TENSORBOARD": false,
+    "IS_BREAK_BY_MAX_ITERATION": true, 
+    "IS_USED_PER": false
   },
   "hyperparams": {
     "batch_size": 32,
