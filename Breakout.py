@@ -11,6 +11,8 @@ from Agent import *
 
 param_json_fname = "DDQN_params.json"
 config_dict, hyperparams_dict, eval_dict = read_json(param_json_fname)
+if config_dict["IS_USED_TENSORBOARD"]:
+    from torch.utils.tensorboard import SummaryWriter 
 
 ### core classes
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -20,7 +22,10 @@ em.print_action_meanings()
 strategy = EpsilonGreedyStrategyLinear(hyperparams_dict["eps_start"], hyperparams_dict["eps_end"], hyperparams_dict["eps_final"],
                                        hyperparams_dict["eps_startpoint"], hyperparams_dict["eps_kneepoint"],hyperparams_dict["eps_final_knee"])
 agent = Agent(strategy, em.num_actions_available(), device)
-memory = ReplayMemory_economy(hyperparams_dict["memory_size"])
+if config_dict["IS_USED_PER"]:
+    memory = ReplayMemory_economy_PER(hyperparams_dict["memory_size"])
+else:
+    memory = ReplayMemory_economy(hyperparams_dict["memory_size"])
 
 # availible models: DQN_CNN_2013,DQN_CNN_2015, Dueling_DQN_2016_Modified
 if config_dict["MODEL_NAME"] == "DQN_CNN_2015":
@@ -36,6 +41,10 @@ target_net.load_state_dict(policy_net.state_dict())
 target_net.eval() # this network will only be used for inference.
 optimizer = optim.Adam(params=policy_net.parameters(), lr=hyperparams_dict["lr"])
 criterion = torch.nn.SmoothL1Loss()
+# can use tensorboard to track the reward
+if config_dict["IS_USED_TENSORBOARD"]:
+    PATH_to_log_dir = config_dict["TENSORBOARD_PATH"] + datetime.datetime.now().strftime(config_dict["DATE_FORMAT"])
+    writer = SummaryWriter(PATH_to_log_dir)
 
 # print("num_actions_available: ",em.num_actions_available())
 # print("action_meanings:" ,em.env.get_action_meanings())
@@ -79,7 +88,10 @@ for episode in range(hyperparams_dict["num_episodes"]):
         if (agent.current_step % hyperparams_dict["action_repeat"] == 0) and \
                 memory.can_provide_sample(hyperparams_dict["batch_size"], hyperparams_dict["replay_start_size"]):
 
-            experiences = memory.sample(hyperparams_dict["batch_size"])
+            if config_dict["IS_USED_PER"]:
+                experiences, experiences_index, weights = memory.sample(hyperparams_dict["batch_size"])
+            else:
+                experiences = memory.sample(hyperparams_dict["batch_size"])
             states, actions, rewards, next_states = extract_tensors(experiences)
             current_q_values = QValues.get_current(policy_net, states, actions) # checked
             # next_q_values = QValues.DQN_get_next(target_net, next_states) # for DQN
@@ -87,7 +99,15 @@ for episode in range(hyperparams_dict["num_episodes"]):
             target_q_values = (next_q_values * hyperparams_dict["gamma"]) + rewards
             # calculate loss and update policy_net
             optimizer.zero_grad()
-            loss = criterion(current_q_values, target_q_values.unsqueeze(1))
+            if config_dict["IS_USED_PER"]:
+                # compute TD error
+                TD_errors = torch.abs(current_q_values - target_q_values.unsqueeze(1)).detach().cpu().numpy()
+                # update priorities
+                memory.update_priority(experiences_index, TD_errors.squeeze(1))
+                # compute loss
+                loss = torch.mean(weights.detach() * (current_q_values - target_q_values.unsqueeze(1))**2)
+            else:
+                loss = criterion(current_q_values, target_q_values.unsqueeze(1))
             loss.backward()
             optimizer.step()
 
@@ -116,14 +136,21 @@ for episode in range(hyperparams_dict["num_episodes"]):
             # save checkpoint model
             if tracker_dict["minibatch_updates_counter"] % config_dict["UPDATE_PER_CHECKPOINT"] == 0:
                 save_model(policy_net, tracker_dict, config_dict)
-
-                plt.savefig(config_dict["FIGURES_PATH"] + "Iterations:{}-Time:".format(tracker_dict["minibatch_updates_counter"]) + datetime.datetime.now().strftime(
+                if not os.path.exists(config_dict["FIGURES_PATH"]):
+                    os.makedirs(config_dict["FIGURES_PATH"])
+                plt.savefig(config_dict["FIGURES_PATH"] + "Iterations_{}-Time_".format(tracker_dict["minibatch_updates_counter"]) + datetime.datetime.now().strftime(
                     config_dict["DATE_FORMAT"]) + ".jpg")
 
         if em.done:
             tracker_dict["rewards_hist"].append(tol_reward)
             tracker_dict["rewards_hist_update_axis"].append(tracker_dict["minibatch_updates_counter"])
             tracker_dict["running_reward"] = plot(tracker_dict["rewards_hist"], 100)
+            # use tensorboard to track the reward
+            if config_dict["IS_USED_TENSORBOARD"]:
+                moving_avg_period = 100
+                tracker_dict["moving_avg"] = get_moving_average(moving_avg_period, tracker_dict["rewards_hist"])
+                writer.add_scalars('reward', {'reward': tracker_dict["rewards_hist"][-1],
+                                                'reward_average': tracker_dict["moving_avg"][-1]}, episode)
             break
 
     if config_dict["IS_BREAK_BY_MAX_ITERATION"] and \
@@ -131,18 +158,20 @@ for episode in range(hyperparams_dict["num_episodes"]):
         break
 
 em.close()
+if config_dict["IS_USED_TENSORBOARD"]:
+    writer.close()
 # save loss figure
 plt.figure()
 plt.plot(tracker_dict["loss_hist"])
 plt.title("loss")
 plt.xlabel("iterations")
-plt.savefig(config_dict["FIGURES_PATH"] + "Loss-Iterations:{}-Time:".format(tracker_dict["minibatch_updates_counter"]) + datetime.datetime.now().strftime(
+plt.savefig(config_dict["FIGURES_PATH"] + "Loss-Iterations_{}-Time_".format(tracker_dict["minibatch_updates_counter"]) + datetime.datetime.now().strftime(
                     config_dict["DATE_FORMAT"]) + ".jpg")
 
 # save tracker_dict["eval_model_list_txt"] to txt file
 if not os.path.exists(eval_dict["EVAL_MODEL_LIST_TXT_PATH"]):
     os.makedirs(eval_dict["EVAL_MODEL_LIST_TXT_PATH"])
-txt_fname = "ModelName:{}-GameName:{}-Time:".format(config_dict["MODEL_NAME"],config_dict["GAME_NAME"]) + datetime.datetime.now().strftime(
+txt_fname = "ModelName_{}-GameName_{}-Time_".format(config_dict["MODEL_NAME"],config_dict["GAME_NAME"]) + datetime.datetime.now().strftime(
                     config_dict["DATE_FORMAT"]) + ".txt"
 with open( eval_dict["EVAL_MODEL_LIST_TXT_PATH"] + txt_fname,'w') as f:
   f.write('\n'.join(tracker_dict["eval_model_list_txt"]))
@@ -153,7 +182,7 @@ print("saving results...")
 print("=" * 100)
 if not os.path.exists(config_dict["RESULT_PATH"]):
     os.makedirs(config_dict["RESULT_PATH"])
-tracker_fname = "ModelName:{}-GameName:{}-Time:".format(config_dict["MODEL_NAME"],config_dict["GAME_NAME"]) + datetime.datetime.now().strftime(
+tracker_fname = "ModelName_{}-GameName_{}-Time_".format(config_dict["MODEL_NAME"],config_dict["GAME_NAME"]) + datetime.datetime.now().strftime(
                     config_dict["DATE_FORMAT"]) + ".pkl"
 with open(config_dict["RESULT_PATH"] + tracker_fname,'wb') as f:
   pickle.dump(tracker_dict, f)
@@ -202,5 +231,4 @@ if config_dict["IS_SAVE_MIDDLE_POINT"]:
         json.dump(md_path_dict, fp)
 
 
-# write heldoutset
 
