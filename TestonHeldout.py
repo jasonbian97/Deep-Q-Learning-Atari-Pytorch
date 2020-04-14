@@ -29,8 +29,10 @@ iterations = [int(x.split("/")[-1].split("_")[1].split("-")[0])/config_dict["UPD
 iterations.sort()
 model_list.sort(key = lambda x: int(x.split("/")[-1].split("_")[1].split("-")[0]))
 
+# set environment
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 em = AtariEnvManager(device, config_dict["GAME_ENV"], config_dict["IS_USE_ADDITIONAL_ENDING_CRITERION"])
+
 # set policy net
 if config_dict["MODEL_NAME"] == "DQN_CNN_2015":
     policy_net = DQN_CNN_2015(num_classes=em.num_actions_available(),init_weights=True).to(device)
@@ -57,6 +59,7 @@ for model_fpath in model_list:
         with open(config_dict["HELDOUT_SET_DIR"]+'/'+hfile,'rb') as f:
             heldout_set = pickle.load(f)
         for state in heldout_set:
+            # compute Qvalue by loaded model
             with torch.no_grad():
                 Qvalue = policy_net(state.float().cuda()/255).detach().max(dim=1)[0].cpu().item()
             Qvalue_model.append(Qvalue)
